@@ -1,0 +1,53 @@
+# Pipeline: Remove NSG association from all subnets in a VNet
+# Sets subnet NSG to "None" (disassociates NSG)
+
+trigger: none
+
+variables:
+  # Azure DevOps service connection name
+  azureServiceConnection: 'REPLACE_WITH_SERVICE_CONNECTION'
+  subscriptionId: '6a3bb170-5159-4bff-860b-aa74fb762697'
+  resourceGroupName: 'aks-demo-2_rg'
+  vnetName: 'AKS-demo-2_RG-vnet'
+
+stages:
+- stage: Update
+  displayName: Remove NSGs from subnets
+  jobs:
+  - job: UpdateSubnets
+    displayName: Update subnet NSG to None
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: AzureCLI@2
+      displayName: Disassociate NSG for all subnets
+      inputs:
+        azureSubscription: '$(azureServiceConnection)'
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          set -euo pipefail
+
+          az account set --subscription "$(subscriptionId)"
+
+          echo "Listing subnets in VNet: $(vnetName)"
+          mapfile -t SUBNETS < <(az network vnet subnet list \
+            --resource-group "$(resourceGroupName)" \
+            --vnet-name "$(vnetName)" \
+            --query "[].name" -o tsv)
+
+          if [ ${#SUBNETS[@]} -eq 0 ]; then
+            echo "No subnets found. Exiting."
+            exit 0
+          fi
+
+          for subnet in "${SUBNETS[@]}"; do
+            echo "Removing NSG from subnet: $subnet"
+            az network vnet subnet update \
+              --resource-group "$(resourceGroupName)" \
+              --vnet-name "$(vnetName)" \
+              --name "$subnet" \
+              --network-security-group ""
+          done
+
+          echo "Done."
