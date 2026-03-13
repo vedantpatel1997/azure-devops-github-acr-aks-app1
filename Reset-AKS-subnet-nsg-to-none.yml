@@ -38,7 +38,7 @@ stages:
         scriptType: bash
         scriptLocation: inlineScript
         inlineScript: |
-          set -euo pipefail
+          set -u -o pipefail
 
           az account set --subscription "$(subscriptionId)"
           echo "Active subscription:"
@@ -56,6 +56,7 @@ stages:
           TOTAL=0
           UPDATED=0
           SKIPPED=0
+          FAILED=0
 
           for vnet in "${VNETS[@]}"; do
             VNET_NAME="$(echo "$vnet" | awk '{print $1}')"
@@ -63,34 +64,36 @@ stages:
             echo "------------------------------------------------------------"
             echo "VNet: $VNET_NAME (RG: $RG_NAME)"
 
-            mapfile -t SUBNETS < <(az network vnet subnet list \
+            SUBNETS_TSV="$(az network vnet subnet list \
               --resource-group "$RG_NAME" \
               --vnet-name "$VNET_NAME" \
-              --query "[].{name:name,id:id,nsg:networkSecurityGroup.id}" -o tsv)
+              --query "[].{name:name,id:id,nsg:networkSecurityGroup.id}" -o tsv)"
 
-            if [ ${#SUBNETS[@]} -eq 0 ]; then
+            if [ -z "$SUBNETS_TSV" ]; then
               echo "No subnets found in this VNet."
               continue
             fi
 
-            for subnet in "${SUBNETS[@]}"; do
-              SUBNET_NAME="$(echo "$subnet" | awk '{print $1}')"
-              SUBNET_ID="$(echo "$subnet" | awk '{print $2}')"
-              SUBNET_NSG="$(echo "$subnet" | awk '{print $3}')"
+            while IFS=$'\t' read -r SUBNET_NAME SUBNET_ID SUBNET_NSG; do
               TOTAL=$((TOTAL + 1))
 
-              if [ -z "$SUBNET_NSG" ] || [ "$SUBNET_NSG" = "None" ]; then
+              if [ -z "${SUBNET_NSG:-}" ]; then
                 echo "Subnet: $SUBNET_NAME | NSG: none | action: skip"
                 SKIPPED=$((SKIPPED + 1))
                 continue
               fi
 
               echo "Subnet: $SUBNET_NAME | NSG: $SUBNET_NSG | action: remove"
-              az network vnet subnet update \
+              if az network vnet subnet update \
                 --ids "$SUBNET_ID" \
-                --network-security-group ""
-              UPDATED=$((UPDATED + 1))
-            done
+                --remove networkSecurityGroup >/dev/null; then
+                UPDATED=$((UPDATED + 1))
+                echo "Result: removed"
+              else
+                FAILED=$((FAILED + 1))
+                echo "Result: failed (see error above)"
+              fi
+            done <<< "$SUBNETS_TSV"
           done
 
           echo "------------------------------------------------------------"
@@ -98,4 +101,5 @@ stages:
           echo "Total subnets scanned: $TOTAL"
           echo "NSG removed: $UPDATED"
           echo "Already none: $SKIPPED"
+          echo "Failed: $FAILED"
           echo "Done."
