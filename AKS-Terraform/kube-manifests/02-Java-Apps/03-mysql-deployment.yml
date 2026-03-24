@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/component: database
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/part-of: aks-terraform-samples
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mysql
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mysql
+        app.kubernetes.io/component: database
+        app.kubernetes.io/managed-by: kubectl
+        app.kubernetes.io/part-of: aks-terraform-samples
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+        workload: java-apps
+      containers:
+        - name: mysql
+          image: mysql:8.0.36
+          imagePullPolicy: IfNotPresent
+          args:
+            - --default-authentication-plugin=mysql_native_password
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-auth
+                  key: mysql-root-password
+            - name: MYSQL_DATABASE
+              value: webappdb
+          ports:
+            - name: mysql
+              containerPort: 3306
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1
+              memory: 1Gi
+          readinessProbe:
+            tcpSocket:
+              port: mysql
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: mysql
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+            - name: mysql-init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-data
+        - name: mysql-init
+          configMap:
+            name: usermanagement-db-init

@@ -1,0 +1,30 @@
+# Terraform working directories and state
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local variable files
+*.tfvars
+*.auto.tfvars
+!*.tfvars.example
+!*.auto.tfvars.example
+
+# Sensitive files and local credentials
+*.pem
+*.pfx
+*.key
+kubeconfig*
+**/aks-prod-sshkeys-terraform/aksprodsshkey
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
