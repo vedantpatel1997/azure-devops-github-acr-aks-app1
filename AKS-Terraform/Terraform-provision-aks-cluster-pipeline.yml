@@ -44,7 +44,7 @@ stages:
               backendServiceArm: 'terraform-aks-azurerm-svc-con'
               backendAzureRmResourceGroupName: 'TerraformStorageAccount'
               backendAzureRmStorageAccountName: 'strgterraformvp'
-              # backendAzureRmContainerName: 'tfstatefiles'
+              backendAzureRmContainerName: 'tfstatefiles'
               # backendAzureRmKey: 'aks-$(DEV_ENVIRONMENT).tfstate'
 
           - task: TerraformTask@5
