@@ -84,7 +84,7 @@ stages:
                   inputs:
                     provider: 'azurerm'
                     command: 'init'
-                    workingDirectory: '$(Pipeline.Workspace)/terraform-manifests-out'
+                    workingDirectory: '$(Pipeline.Workspace)/Terraform-manifests-out'
                     backendServiceArm: 'terraform-aks-azurerm-svc-con'
                     backendAzureRmResourceGroupName: 'TerraformStorageAccount'
                     backendAzureRmStorageAccountName: 'strgterraformvp'
@@ -96,8 +96,8 @@ stages:
                   inputs:
                     provider: 'azurerm'
                     command: 'plan'
-                    workingDirectory: '$(Pipeline.Workspace)/terraform-manifests-out'
-                    commandOptions: '-var ssh_public_key=$(sshkey.secureFilePath) -var environment=$(DEV_ENVIRONMENT) -out $(Pipeline.Workspace)/terraform-manifests-out/$(DEV_ENVIRONMENT)-$(Build.BuildId).out'
+                    workingDirectory: '$(Pipeline.Workspace)/Terraform-manifests-out'
+                    commandOptions: '-var ssh_public_key=$(sshkey.secureFilePath) -var environment=$(DEV_ENVIRONMENT) -out $(Pipeline.Workspace)/Terraform-manifests-out/$(DEV_ENVIRONMENT)-$(Build.BuildId).out'
                     environmentServiceNameAzureRM: 'terraform-aks-azurerm-svc-con'
 
                 - task: TerraformTask@5
@@ -105,6 +105,6 @@ stages:
                   inputs:
                     provider: 'azurerm'
                     command: 'apply'
-                    workingDirectory: '$(Pipeline.Workspace)/terraform-manifests-out'
-                    commandOptions: '$(Pipeline.Workspace)/terraform-manifests-out/$(DEV_ENVIRONMENT)-$(Build.BuildId).out'
+                    workingDirectory: '$(Pipeline.Workspace)/Terraform-manifests-out'
+                    commandOptions: '$(Pipeline.Workspace)/Terraform-manifests-out/$(DEV_ENVIRONMENT)-$(Build.BuildId).out'
                     environmentServiceNameAzureRM: 'terraform-aks-azurerm-svc-con'
