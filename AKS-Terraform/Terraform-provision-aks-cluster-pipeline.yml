@@ -18,7 +18,7 @@ stages:
           - task: PublishPipelineArtifact@1
             displayName: Publish Artifacts
             inputs:
-              targetPath: '$(System.DefaultWorkingDirectory)/AKS-Terraform/terraform-manifests'
+              targetPath: '$(System.DefaultWorkingDirectory)/AKS-Terraform/Terraform-manifests'
               artifact: 'terraform-manifests-out'
               publishLocation: 'pipeline'
 
@@ -32,7 +32,7 @@ stages:
             inputs:
               provider: 'azurerm'
               command: 'init'
-              workingDirectory: '$(System.DefaultWorkingDirectory)/AKS-Terraform/terraform-manifests'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/AKS-Terraform/Terraform-manifests'
               backendServiceArm: 'terraform-aks-azurerm-svc-con'
               backendAzureRmResourceGroupName: 'TerraformStorageAccount'
               backendAzureRmStorageAccountName: 'strgterraformvp'
@@ -44,4 +44,4 @@ stages:
             inputs:
               provider: 'azurerm'
               command: 'validate'
-              workingDirectory: '$(System.DefaultWorkingDirectory)/AKS-Terraform/terraform-manifests'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/AKS-Terraform/Terraform-manifests'
