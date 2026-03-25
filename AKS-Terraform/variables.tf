@@ -54,7 +54,8 @@ variable "aks_admin_user_principal_name" {
 variable "ssh_public_key" {
   type        = string
   description = "Relative path to the SSH public key used for Linux node access."
-  default     = "aks-prod-sshkeys-terraform/aksprodsshkey.pub"
+  # Commented as we are using devops pipeline to manage secrets. If you want to use local state, uncomment the default value and ensure the public key file exists at the specified path.
+  # default     = "aks-prod-sshkeys-terraform/aksprodsshkey.pub"
 
   validation {
     condition     = fileexists(var.ssh_public_key)
