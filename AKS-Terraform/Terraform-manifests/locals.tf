@@ -1,10 +1,11 @@
 locals {
-  environment_slug          = lower(var.environment)
-  location_slug             = lower(replace(var.location, " ", ""))
+  environment_slug = lower(var.environment)
+  location_slug    = lower(replace(var.location, " ", ""))
   # instance_suffix           = "01"
   name_suffix               = "${var.organization_name}-aks-${local.environment_slug}-${local.location_slug}"
   cluster_suffix            = "${var.organization_name}-${local.environment_slug}-${local.location_slug}"
   node_pool_environment_tag = substr(replace(local.environment_slug, "-", ""), 0, 3)
+  windows_node_pool_tag     = substr(replace(local.environment_slug, "-", ""), 0, 2)
 
   resource_group_name                  = "rg-${local.name_suffix}"
   cluster_name                         = "aks-${local.cluster_suffix}"
@@ -15,12 +16,12 @@ locals {
   system_subnet_name                   = "snet-${local.name_suffix}-system"
   linux_user_subnet_name               = "snet-${local.name_suffix}-linux"
   windows_user_subnet_name             = "snet-${local.name_suffix}-windows"
-  system_node_pool_name                = substr("npsys${local.node_pool_environment_tag}", 0, 12)
-  linux_user_node_pool_name            = substr("nplin${local.node_pool_environment_tag}", 0, 12)
-  windows_user_node_pool_name          = substr("npwin${local.node_pool_environment_tag}", 0, 12)
-  system_node_pool_rotation_name       = substr("npsrt${local.node_pool_environment_tag}", 0, 12)
-  linux_user_node_pool_rotation_name   = substr("nplrt${local.node_pool_environment_tag}", 0, 12)
-  windows_user_node_pool_rotation_name = substr("npwrt${local.node_pool_environment_tag}", 0, 12)
+  system_node_pool_name                = substr("sys${local.node_pool_environment_tag}01", 0, 12)
+  linux_user_node_pool_name            = substr("lin${local.node_pool_environment_tag}01", 0, 12)
+  windows_user_node_pool_name          = substr("win${local.windows_node_pool_tag}1", 0, 6)
+  system_node_pool_rotation_name       = substr("syr${local.node_pool_environment_tag}01", 0, 12)
+  linux_user_node_pool_rotation_name   = substr("lir${local.node_pool_environment_tag}01", 0, 12)
+  windows_user_node_pool_rotation_name = substr("wir${local.windows_node_pool_tag}1", 0, 6)
 
   common_tags = merge(
     {
