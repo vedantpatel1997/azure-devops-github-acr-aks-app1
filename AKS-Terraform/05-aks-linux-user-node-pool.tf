@@ -14,7 +14,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "linux_user" {
   auto_scaling_enabled        = true
   zones                       = var.user_node_pool_zones
   vnet_subnet_id              = azurerm_subnet.linux_user_node_pool.id
-  temporary_name_for_rotation = "linuxtmp1"
+  temporary_name_for_rotation = local.linux_user_node_pool_rotation_name
   node_labels                 = local.linux_user_node_pool_labels
   tags                        = local.linux_user_node_pool_tags
 

@@ -1,18 +1,26 @@
 locals {
-  environment_compact          = substr(replace(var.environment, "-", ""), 0, 4)
-  name_prefix                  = lower("${var.organization_name}-${var.environment}")
-  resource_group_name          = "rg-${local.name_prefix}-aks"
-  cluster_name                 = "${local.resource_group_name}-cluster"
-  node_resource_group_name     = "${local.resource_group_name}-nrg"
-  log_analytics_workspace_name = "lws-${local.name_prefix}-aks-${random_pet.aks_suffix.id}"
-  cluster_admin_group_name     = "grp-aks-admins-${local.name_prefix}"
-  virtual_network_name         = "vnet-${local.name_prefix}-aks"
-  system_subnet_name           = "snet-${local.name_prefix}-aks-system"
-  linux_user_subnet_name       = "snet-${local.name_prefix}-aks-linux"
-  windows_user_subnet_name     = "snet-${local.name_prefix}-aks-windows"
-  system_node_pool_name        = substr("aks${local.environment_compact}sys", 0, 12)
-  linux_user_node_pool_name    = substr("aks${local.environment_compact}lin", 0, 12)
-  windows_user_node_pool_name  = substr("aks${local.environment_compact}win", 0, 12)
+  environment_slug          = lower(var.environment)
+  location_slug             = lower(replace(var.location, " ", ""))
+  # instance_suffix           = "01"
+  name_suffix               = "${var.organization_name}-aks-${local.environment_slug}-${local.location_slug}"
+  cluster_suffix            = "${var.organization_name}-${local.environment_slug}-${local.location_slug}"
+  node_pool_environment_tag = substr(replace(local.environment_slug, "-", ""), 0, 3)
+
+  resource_group_name                  = "rg-${local.name_suffix}"
+  cluster_name                         = "aks-${local.cluster_suffix}"
+  node_resource_group_name             = "rg-${local.name_suffix}-nodes"
+  log_analytics_workspace_name         = "log-${local.name_suffix}"
+  cluster_admin_group_name             = "grp-aksadmin-${local.cluster_name}"
+  virtual_network_name                 = "vnet-${local.name_suffix}"
+  system_subnet_name                   = "snet-${local.name_suffix}-system"
+  linux_user_subnet_name               = "snet-${local.name_suffix}-linux"
+  windows_user_subnet_name             = "snet-${local.name_suffix}-windows"
+  system_node_pool_name                = substr("npsys${local.node_pool_environment_tag}", 0, 12)
+  linux_user_node_pool_name            = substr("nplin${local.node_pool_environment_tag}", 0, 12)
+  windows_user_node_pool_name          = substr("npwin${local.node_pool_environment_tag}", 0, 12)
+  system_node_pool_rotation_name       = substr("npsrt${local.node_pool_environment_tag}", 0, 12)
+  linux_user_node_pool_rotation_name   = substr("nplrt${local.node_pool_environment_tag}", 0, 12)
+  windows_user_node_pool_rotation_name = substr("npwrt${local.node_pool_environment_tag}", 0, 12)
 
   common_tags = merge(
     {

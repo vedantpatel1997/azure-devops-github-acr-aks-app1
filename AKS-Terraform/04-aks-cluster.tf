@@ -20,7 +20,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
     zones                       = var.system_node_pool_zones
     type                        = "VirtualMachineScaleSets"
     vnet_subnet_id              = azurerm_subnet.system_node_pool.id
-    temporary_name_for_rotation = "syspooltmp"
+    temporary_name_for_rotation = local.system_node_pool_rotation_name
     node_labels                 = local.system_node_pool_labels
     tags                        = local.system_node_pool_tags
 
