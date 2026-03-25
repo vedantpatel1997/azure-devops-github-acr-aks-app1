@@ -7,7 +7,7 @@ variable "location" {
 
 variable "environment" {
   type        = string
-  description = "Short environment name used in resource naming and tagging."
+  description = "Short environment name used in resource naming, AKS node pool naming, and tagging."
   default     = "dev"
 
   validation {
@@ -78,6 +78,7 @@ variable "windows_admin_password" {
   type        = string
   description = "Windows administrator password for AKS Windows nodes. Supply this through tfvars or environment variables."
   sensitive   = true
+  default     = "Password@4124567980" # Placeholder value; override in production with secure password management.
   nullable    = false
 
   validation {
@@ -98,6 +99,68 @@ variable "log_analytics_retention_days" {
   }
 }
 
+# Networking settings
+variable "aks_vnet_address_space" {
+  type        = list(string)
+  description = "Address space assigned to the custom virtual network hosting the AKS node pools."
+  default     = ["10.240.0.0/16"]
+
+  validation {
+    condition     = alltrue([for prefix in var.aks_vnet_address_space : can(cidrnetmask(prefix))])
+    error_message = "aks_vnet_address_space must contain valid CIDR ranges."
+  }
+}
+
+variable "system_node_pool_subnet_address_prefixes" {
+  type        = list(string)
+  description = "Subnet CIDR ranges for the AKS system node pool."
+  default     = ["10.240.0.0/22"]
+
+  validation {
+    condition     = alltrue([for prefix in var.system_node_pool_subnet_address_prefixes : can(cidrnetmask(prefix))])
+    error_message = "system_node_pool_subnet_address_prefixes must contain valid CIDR ranges."
+  }
+}
+
+variable "linux_user_node_pool_subnet_address_prefixes" {
+  type        = list(string)
+  description = "Subnet CIDR ranges for the AKS Linux user node pool."
+  default     = ["10.240.4.0/22"]
+
+  validation {
+    condition     = alltrue([for prefix in var.linux_user_node_pool_subnet_address_prefixes : can(cidrnetmask(prefix))])
+    error_message = "linux_user_node_pool_subnet_address_prefixes must contain valid CIDR ranges."
+  }
+}
+
+variable "windows_user_node_pool_subnet_address_prefixes" {
+  type        = list(string)
+  description = "Subnet CIDR ranges for the AKS Windows user node pool."
+  default     = ["10.240.8.0/22"]
+
+  validation {
+    condition     = alltrue([for prefix in var.windows_user_node_pool_subnet_address_prefixes : can(cidrnetmask(prefix))])
+    error_message = "windows_user_node_pool_subnet_address_prefixes must contain valid CIDR ranges."
+  }
+}
+
+variable "aks_service_cidr" {
+  type        = string
+  description = "Kubernetes service CIDR used by the AKS cluster. This must not overlap with the VNet address space."
+  default     = "10.2.0.0/24"
+
+  validation {
+    condition     = can(cidrnetmask(var.aks_service_cidr))
+    error_message = "aks_service_cidr must be a valid CIDR range."
+  }
+}
+
+variable "aks_dns_service_ip" {
+  type        = string
+  description = "Cluster DNS service IP allocated from aks_service_cidr."
+  default     = "10.2.0.10"
+}
+
 # Node pool settings
 variable "system_node_pool_vm_size" {
   type        = string
@@ -107,8 +170,8 @@ variable "system_node_pool_vm_size" {
 
 variable "linux_user_node_pool_vm_size" {
   type        = string
-  description = "Virtual machine size for the Linux user node pool."
-  default     = "Standard_D2_v2"
+  description = "Virtual machine size for the Linux user node pool. Use a Premium SSD-capable SKU for stateful workloads such as MySQL."
+  default     = "Standard_DS2_v2"
 }
 
 variable "windows_user_node_pool_vm_size" {

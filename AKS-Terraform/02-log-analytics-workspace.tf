@@ -1,5 +1,5 @@
 resource "azurerm_log_analytics_workspace" "aks" {
-  name                = "lws-${local.name_prefix}-${random_pet.aks_suffix.id}"
+  name                = local.log_analytics_workspace_name
   location            = azurerm_resource_group.aks.location
   resource_group_name = azurerm_resource_group.aks.name
   sku                 = "PerGB2018"

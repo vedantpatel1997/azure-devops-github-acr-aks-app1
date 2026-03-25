@@ -21,12 +21,19 @@ terraform {
     resource_group_name  = "TerraformStorageAccount"
     storage_account_name = "strgterraformvp"
     container_name       = "tfstatefiles"
-    key                  = "aks.tfstate"
+    # Backend blocks cannot use input variables. Keep the shared container
+    # static and pass an environment-specific AKS state key during init, for example:
+    # ./Initialize-AksTerraformBackend.ps1 -Environment dev
+    # ./Initialize-AksTerraformBackend.ps1 -Environment prod
   }
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    resource_group {
+      prevent_deletion_if_contains_resources = false
+    }
+  }
 }
 
 # Adds a short unique suffix to names that must be globally unique in Azure.

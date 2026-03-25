@@ -6,7 +6,7 @@ metadata:
     app.kubernetes.io/managed-by: kubectl
     app.kubernetes.io/part-of: aks-terraform-samples
 provisioner: disk.csi.azure.com
-reclaimPolicy: Retain
+reclaimPolicy: Delete
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
 parameters:

@@ -1,5 +1,5 @@
 resource "azuread_group" "cluster_admins" {
-  display_name     = "grp-aks-admins-${local.name_prefix}"
+  display_name     = local.cluster_admin_group_name
   description      = "Microsoft Entra group for AKS cluster administrators on ${local.cluster_name}."
   security_enabled = true
 }
@@ -10,9 +10,9 @@ resource "azuread_group_member" "cluster_admin_user" {
 }
 
 # Grants the admin group permission to retrieve the cluster user kubeconfig.
-resource "azurerm_role_assignment" "cluster_user_credentials" {
-  scope                = azurerm_kubernetes_cluster.aks.id
-  role_definition_name = "Azure Kubernetes Service Cluster User Role"
-  principal_id         = azuread_group.cluster_admins.object_id
-  principal_type       = "Group"
-}
+# resource "azurerm_role_assignment" "cluster_user_credentials" {
+#   scope                = azurerm_kubernetes_cluster.aks.id
+#   role_definition_name = "Azure Kubernetes Service Cluster User Role"
+#   principal_id         = azuread_group.cluster_admins.object_id
+#   principal_type       = "Group"
+# }

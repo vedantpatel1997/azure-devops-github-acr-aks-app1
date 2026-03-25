@@ -10,17 +10,19 @@ resource "azurerm_kubernetes_cluster" "aks" {
   support_plan            = "KubernetesOfficial"
 
   default_node_pool {
-    name                 = "systempool"
-    vm_size              = var.system_node_pool_vm_size
-    node_count           = 1
-    min_count            = 1
-    max_count            = 3
-    auto_scaling_enabled = true
-    orchestrator_version = var.kubernetes_version
-    zones                = var.system_node_pool_zones
-    type                 = "VirtualMachineScaleSets"
-    node_labels          = local.system_node_pool_labels
-    tags                 = local.system_node_pool_tags
+    name                        = local.system_node_pool_name
+    vm_size                     = var.system_node_pool_vm_size
+    node_count                  = 1
+    min_count                   = 1
+    max_count                   = 3
+    auto_scaling_enabled        = true
+    orchestrator_version        = var.kubernetes_version
+    zones                       = var.system_node_pool_zones
+    type                        = "VirtualMachineScaleSets"
+    vnet_subnet_id              = azurerm_subnet.system_node_pool.id
+    temporary_name_for_rotation = "syspooltmp"
+    node_labels                 = local.system_node_pool_labels
+    tags                        = local.system_node_pool_tags
 
     upgrade_settings {
       max_surge                     = "10%"
@@ -62,6 +64,8 @@ resource "azurerm_kubernetes_cluster" "aks" {
   network_profile {
     network_plugin    = "azure"
     load_balancer_sku = "standard"
+    service_cidr      = var.aks_service_cidr
+    dns_service_ip    = var.aks_dns_service_ip
   }
 
   lifecycle {

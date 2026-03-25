@@ -23,6 +23,16 @@ output "cluster_id" {
   value       = azurerm_kubernetes_cluster.aks.id
 }
 
+output "virtual_network_name" {
+  description = "Name of the custom virtual network hosting the AKS node pools."
+  value       = azurerm_virtual_network.aks.name
+}
+
+output "virtual_network_id" {
+  description = "Resource ID of the custom virtual network hosting the AKS node pools."
+  value       = azurerm_virtual_network.aks.id
+}
+
 output "configured_kubernetes_version" {
   description = "Pinned Kubernetes version configured for the cluster and node pools."
   value       = var.kubernetes_version
@@ -68,6 +78,21 @@ output "kube_config" {
 output "linux_user_node_pool_id" {
   description = "Resource ID of the Linux user node pool."
   value       = azurerm_kubernetes_cluster_node_pool.linux_user.id
+}
+
+output "system_node_pool_subnet_id" {
+  description = "Resource ID of the subnet assigned to the AKS system node pool."
+  value       = azurerm_subnet.system_node_pool.id
+}
+
+output "linux_user_node_pool_subnet_id" {
+  description = "Resource ID of the subnet assigned to the Linux user node pool."
+  value       = azurerm_subnet.linux_user_node_pool.id
+}
+
+output "windows_user_node_pool_subnet_id" {
+  description = "Resource ID of the subnet assigned to the Windows user node pool."
+  value       = azurerm_subnet.windows_user_node_pool.id
 }
 
 output "windows_user_node_pool_id" {
