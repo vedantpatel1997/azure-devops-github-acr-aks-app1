@@ -2,29 +2,62 @@
 
 This folder contains the Terraform code and Azure DevOps YAML pipelines used to provision and destroy AKS environments.
 
-This guide is written for beginners. Follow it from top to bottom the first time you set up the project.
+This guide is written for beginners and matches the current pipeline design in this repo.
 
-## What this project contains
+## Current design at a glance
+
+This project now uses only two reusable Azure DevOps Environments:
+
+- `qa`
+- `prod`
+
+Those same two environment objects are reused by:
+
+- the provision pipeline when it applies Terraform changes
+- the destroy pipeline when it applies Terraform destroy plans
+
+This design keeps the approval model simple and works well when the same approvers should review both apply and destroy actions for a given environment.
+
+Tradeoff:
+
+- If you later decide destroy operations need stricter approvals than provision operations, split the environments again.
+
+## Important migration note
+
+This repo previously used `dev` and `qa` style naming in the pipelines. The current pipeline model is `qa` and `prod`.
+
+That means the pipelines now use these Terraform state files:
+
+- `aks-qa.tfstate`
+- `aks-prod.tfstate`
+
+If you already have a live environment managed by `aks-dev.tfstate`, the new pipelines will not automatically rename that state to prod.
+
+In plain language:
+
+- changing the pipeline from `dev` to `prod` changes the Terraform environment value
+- that changes resource names
+- that also changes the backend state key from `aks-dev.tfstate` to `aks-prod.tfstate`
+
+If your old `dev` environment should become the new `prod` environment, plan a Terraform state migration before using the new prod pipeline in a live subscription.
+
+## Active pipeline files
 
 Use these two YAML files as the active pipelines for this Terraform project:
 
 - `Terraform-provision-aks-cluster-pipeline.yml`
 - `Terraform-destroy-aks-cluster-pipeline.yml`
 
-Important:
+Main Terraform code:
 
-- The provision pipeline creates or updates AKS infrastructure.
-- The destroy pipeline tears down AKS infrastructure.
-- The destroy pipeline is manual only.
-- The destroy pipeline is designed to use Azure DevOps Environment approvals.
+- `Terraform-manifests/`
 
-Other important folders:
+Other useful folders:
 
-- `Terraform-manifests/`: the Terraform code.
-- `kube-manifests/`: Kubernetes workload manifests that can be deployed after the cluster is created.
-- `aks-prod-sshkeys-terraform/`: local SSH key files used outside Azure DevOps. The pipeline itself uses a Secure File in Azure DevOps.
+- `kube-manifests/`
+- `aks-prod-sshkeys-terraform/`
 
-## How the current pipelines work
+## How the pipelines work now
 
 ### Provision pipeline
 
@@ -32,20 +65,21 @@ File:
 
 - `Terraform-provision-aks-cluster-pipeline.yml`
 
-What it does:
+Flow:
 
-1. Triggers automatically when code is pushed to the `main` branch.
-2. Publishes the Terraform code as a pipeline artifact.
-3. Runs `terraform init` and `terraform validate`.
-4. Deploys the `dev` AKS environment.
-5. Deploys the `qa` AKS environment.
+1. Validate Terraform.
+2. Create the QA plan.
+3. Wait for approval on the reusable `qa` environment.
+4. Apply the approved QA plan.
+5. Create the prod plan.
+6. Wait for approval on the reusable `prod` environment.
+7. Apply the approved prod plan.
 
-Important behavior:
+Why this is a good practice:
 
-- `dev` and `qa` are deployed as separate Azure DevOps deployment jobs.
-- After validation, the `dev` and `qa` stages can run in parallel.
-- This pipeline currently does not require manual approval in YAML.
-- If you want approvals for provision later, add them to the Azure DevOps Environments named `dev` and `qa`.
+- approvers review the Terraform plan before apply starts
+- prod is promoted only after qa succeeds
+- the exact reviewed plan file is what gets applied
 
 ### Destroy pipeline
 
@@ -53,61 +87,55 @@ File:
 
 - `Terraform-destroy-aks-cluster-pipeline.yml`
 
-What it does:
+Flow:
 
-1. Does not trigger automatically from Git.
-2. Lets you choose which environment to destroy: `dev` or `qa`.
-3. Validates the Terraform code.
-4. Creates a Terraform destroy plan for only the selected environment.
-5. Publishes the destroy plan as an artifact for review.
-6. Waits for Azure DevOps Environment approval on the destroy environment.
-7. Applies the exact reviewed destroy plan after approval.
+1. Choose `qa` or `prod` when you start the run.
+2. Validate Terraform.
+3. Create a destroy plan for the selected environment.
+4. Wait for approval on the same reusable environment object.
+5. Apply the reviewed destroy plan.
 
-Important behavior:
+Why this is a good practice:
 
-- One environment is destroyed per run.
-- The destroy pipeline uses deployment environments:
-  - `aks-destroy-dev`
-  - `aks-destroy-qa`
-- The approval timeout should be configured on those Azure DevOps Environments, not in YAML.
+- destroy approval also happens after the plan is visible
+- the approver can review the `.txt` plan summary before approving
+- the pipeline applies the exact reviewed destroy plan
 
 ## Names this project expects
 
-The current YAML files are already wired to these names. If you change any of them in Azure DevOps or Azure, update the YAML too.
+These names are currently hard-coded in the YAML files. If you change them in Azure DevOps or Azure, update the YAML too.
 
 ### Azure DevOps names
 
-- Provision environment 1: `dev`
-- Provision environment 2: `qa`
-- Destroy environment 1: `aks-destroy-dev`
-- Destroy environment 2: `aks-destroy-qa`
+- Environment 1: `qa`
+- Environment 2: `prod`
 - Secure file: `aks-terraform-devops-ssh-key-ubuntu.pub`
 - Service connection: `terraform-aks-azurerm-svc-con`
 
-### Azure backend names for Terraform state
+### Terraform backend names
 
 - Resource group: `TerraformStorageAccount`
 - Storage account: `strgterraformvp`
 - Blob container: `tfstatefiles`
 
-### Terraform state files used by this repo
+### Terraform state files
 
-- `aks-dev.tfstate`
 - `aks-qa.tfstate`
+- `aks-prod.tfstate`
 
 ## Before you start
 
-Make sure you have these prerequisites:
+Make sure you have:
 
 1. An Azure DevOps project.
 2. This repository connected to Azure DevOps Repos or GitHub.
-3. Permission to create pipelines, environments, and service connections in Azure DevOps.
+3. Permission to create pipelines, environments, secure files, and service connections.
 4. Permission in Azure to create and delete AKS-related resources.
-5. A Terraform backend storage account already created in Azure.
-6. The SSH public key file that the pipeline will upload as a Secure File.
-7. The Azure DevOps Terraform extension installed if your organization does not already have the Terraform tasks available.
+5. The Terraform backend storage already created.
+6. The SSH public key file that will be uploaded as a Secure File.
+7. The Terraform Azure DevOps extension installed if your organization does not already have the Terraform tasks.
 
-Simple check:
+Quick check:
 
 - If Azure DevOps does not recognize `TerraformInstaller@1` or `TerraformTask@5`, install the Terraform extension first.
 
@@ -115,96 +143,86 @@ Simple check:
 
 Set up the project in this order:
 
-1. Confirm your repository and branch.
-2. Install the Terraform task extension if needed.
+1. Confirm your repo and branch.
+2. Install the Terraform extension if needed.
 3. Create the Azure Resource Manager service connection.
-4. Make sure the service connection has Azure permissions.
+4. Confirm the service connection has Azure permissions.
 5. Upload the SSH public key as a Secure File.
-6. Create Azure DevOps Environments for provision and destroy.
-7. Add approvals to the destroy environments.
+6. Create the reusable environments `qa` and `prod`.
+7. Add approval checks to `qa` and `prod`.
 8. Create the provision pipeline.
 9. Create the destroy pipeline.
-10. Run a test deployment.
-11. Run a test destroy in a non-production environment only after approvals are confirmed.
+10. Run a QA test first.
+11. Use prod only after QA is working and approvals are confirmed.
 
 ## Step-by-step Azure DevOps setup
 
 ### Step 1: Confirm the repository and branch
 
-Before creating pipelines, check the following:
+Before creating pipelines:
 
-1. The repository contains the `AKS-Terraform` folder.
-2. The active branch for automatic deployments is `main`.
-3. The file `AKS-Terraform/Terraform-provision-aks-cluster-pipeline.yml` exists in the branch you will use.
-4. The file `AKS-Terraform/Terraform-destroy-aks-cluster-pipeline.yml` exists in the branch you will use.
+1. Confirm the repo contains the `AKS-Terraform` folder.
+2. Confirm the branch used for automatic deployments is `main`.
+3. Confirm both YAML files exist in that branch.
 
 Why this matters:
 
-- The provision pipeline is configured with `trigger: main`.
-- If your default branch is not `main`, either rename your branch strategy or update the YAML trigger.
+- the provision pipeline uses `trigger: main`
+- if your working branch strategy is different, update the YAML trigger before relying on auto-runs
 
 ### Step 2: Install the Terraform Azure DevOps extension if needed
 
-This repo uses these pipeline tasks:
+This repo uses:
 
 - `TerraformInstaller@1`
 - `TerraformTask@5`
 
-If those tasks are not already available in your Azure DevOps organization:
+If Azure DevOps does not recognize those tasks:
 
-1. Open Azure DevOps.
-2. Go to the Azure DevOps Marketplace.
-3. Find the Terraform extension used by your organization for Azure Pipelines.
-4. Install it into your Azure DevOps organization.
-5. Return to your project and verify the Terraform tasks are now recognized.
-
-Beginner tip:
-
-- If pipeline creation fails with a message like "task not found", this extension is usually the missing piece.
+1. Open Azure DevOps Marketplace.
+2. Find the Terraform extension used by your organization for Azure Pipelines.
+3. Install it into your Azure DevOps organization.
+4. Return to your project and reopen the pipeline editor.
 
 ### Step 3: Create the Azure Resource Manager service connection
 
-The YAML expects a service connection with this exact name:
+The YAML expects this exact service connection name:
 
 - `terraform-aks-azurerm-svc-con`
 
-Create it in Azure DevOps:
+Create it:
 
 1. Open `Project settings`.
-2. Select `Service connections`.
+2. Open `Service connections`.
 3. Select `New service connection`.
 4. Choose `Azure Resource Manager`.
 5. Follow the Azure sign-in flow.
-6. Create the connection with the name `terraform-aks-azurerm-svc-con`.
-7. Save it.
+6. Save it as `terraform-aks-azurerm-svc-con`.
 
 Recommended approach:
 
-- If your Azure DevOps organization supports it, use workload identity federation for better security.
+- use workload identity federation if your Azure DevOps organization supports it
 
-### Step 4: Make sure the service connection has Azure permissions
+### Step 4: Confirm the service connection has Azure permissions
 
-Creating the service connection is not enough by itself. It must also have the right Azure access.
+The service connection must be able to:
 
-The service connection needs access to:
+- read and write the Terraform backend
+- create and update AKS resources
+- delete AKS resources for destroy runs
 
-- The resource group or subscription where AKS resources will be created.
-- The Terraform backend resource group.
-- The storage account `strgterraformvp`.
-- The blob container `tfstatefiles`.
+Check access to:
 
-What to check:
+- the target subscription or resource group
+- the resource group `TerraformStorageAccount`
+- the storage account `strgterraformvp`
+- the blob container `tfstatefiles`
 
-1. In Azure, open the subscription or resource group scope used by this project.
-2. Open `Access control (IAM)`.
-3. Confirm the identity behind the service connection has the required role assignments.
-4. Confirm it can read and write Terraform state in the storage account.
+If this is missing, common failures are:
 
-If this is missing, common errors are:
-
-- Terraform init fails against the backend.
-- Terraform plan cannot read the state.
-- Terraform apply cannot create or delete Azure resources.
+- `terraform init` backend errors
+- `terraform plan` access errors
+- `terraform apply` authorization errors
 
 ### Step 5: Upload the SSH public key as a Secure File
 
@@ -212,271 +230,260 @@ Both pipelines expect this exact secure file name:
 
 - `aks-terraform-devops-ssh-key-ubuntu.pub`
 
-Upload it in Azure DevOps:
+Upload it:
 
-1. Go to `Pipelines`.
+1. Open `Pipelines`.
 2. Open `Library`.
 3. Open `Secure files`.
 4. Select `+ Secure file`.
 5. Upload the public key file.
-6. Make sure the uploaded file name exactly matches `aks-terraform-devops-ssh-key-ubuntu.pub`.
-7. Authorize the pipelines to use the file.
+6. Confirm the file name matches exactly.
+7. Authorize the pipelines to use it.
 
 Important:
 
-- Upload the public key file, not the private key.
-- If the file name does not match the YAML, the pipeline will fail.
+- upload the public key, not the private key
+- if the name does not match the YAML, the run will fail
 
-### Step 6: Create the Azure DevOps Environments
+### Step 6: Create the reusable Azure DevOps Environments
 
-This project uses Azure DevOps Environments for deployment history and approvals.
+Create only these two environments:
 
-Create these four environments:
-
-- `dev`
 - `qa`
-- `aks-destroy-dev`
-- `aks-destroy-qa`
+- `prod`
 
-How to create them:
-
-1. Open `Pipelines`.
-2. Select `Environments`.
-3. Select `New environment`.
-4. Create `dev`.
-5. Repeat for `qa`.
-6. Repeat for `aks-destroy-dev`.
-7. Repeat for `aks-destroy-qa`.
-
-What each one is used for:
-
-- `dev`: provision pipeline deployment history for the dev environment.
-- `qa`: provision pipeline deployment history for the qa environment.
-- `aks-destroy-dev`: destroy pipeline approval and deployment history for destroying dev.
-- `aks-destroy-qa`: destroy pipeline approval and deployment history for destroying qa.
-
-### Step 7: Add approval checks to the destroy environments
-
-This is the most important safety step for the destroy pipeline.
-
-Add approvals to:
-
-- `aks-destroy-dev`
-- `aks-destroy-qa`
-
-How to configure approval:
+How:
 
 1. Open `Pipelines`.
 2. Open `Environments`.
-3. Select `aks-destroy-dev`.
+3. Select `New environment`.
+4. Create `qa`.
+5. Create `prod`.
+
+How they are reused:
+
+- provision apply for QA uses `qa`
+- destroy apply for QA uses `qa`
+- provision apply for prod uses `prod`
+- destroy apply for prod uses `prod`
+
+### Step 7: Add approval checks to the reusable environments
+
+This is the key part of the approval model.
+
+Add approval checks to:
+
+- `qa`
+- `prod`
+
+How:
+
+1. Open `Pipelines`.
+2. Open `Environments`.
+3. Select `qa`.
 4. Open `Approvals and checks`.
 5. Add an `Approval` check.
-6. Select the users or group who are allowed to approve destroy runs.
+6. Choose the approvers or approval group.
 7. Set the timeout to `120 minutes`.
-8. Save the approval check.
-9. Repeat the same steps for `aks-destroy-qa`.
+8. Save the check.
+9. Repeat the same steps for `prod`.
 
-What this does:
+What this means in practice:
 
-- The destroy deployment cannot start until someone approves it.
-- If nobody approves it within 120 minutes, Azure DevOps blocks the deployment from proceeding.
-
-Optional:
-
-- If you also want approvals before provisioning, add approval checks to `dev` and `qa`.
-- That is optional and not required by the current YAML.
+- QA apply pauses after the QA plan is created
+- prod apply pauses after the prod plan is created
+- destroy also pauses after the destroy plan is created
+- the same environment approval policy is reused for both pipeline types
 
 ### Step 8: Create the provision pipeline
 
-Create the first pipeline from the provision YAML:
-
 1. Open `Pipelines`.
 2. Select `New pipeline`.
-3. Choose the repository that contains this project.
+3. Choose the repository.
 4. Choose `Existing Azure Pipelines YAML file`.
 5. Select `AKS-Terraform/Terraform-provision-aks-cluster-pipeline.yml`.
 6. Review the YAML preview.
-7. Save the pipeline with a clear name such as `AKS Terraform Provision`.
+7. Save it with a clear name such as `AKS Terraform Provision`.
 
-What to expect after creation:
+What happens after creation:
 
-- Because this pipeline has a `main` branch trigger, future commits to `main` will start it automatically.
-- Depending on your Azure DevOps flow, the first save may also offer a run. If your setup is not complete yet, cancel that first run and finish the remaining steps first.
+- pushes to `main` can trigger it automatically
+- the run will create a QA plan first
+- after QA approval and apply, it will create the prod plan
 
 ### Step 9: Create the destroy pipeline
 
-Create the second pipeline from the destroy YAML:
-
 1. Open `Pipelines`.
 2. Select `New pipeline`.
-3. Choose the same repository.
+3. Choose the repository.
 4. Choose `Existing Azure Pipelines YAML file`.
 5. Select `AKS-Terraform/Terraform-destroy-aks-cluster-pipeline.yml`.
 6. Review the YAML preview.
-7. Save the pipeline with a clear name such as `AKS Terraform Destroy`.
+7. Save it with a clear name such as `AKS Terraform Destroy`.
 
-What to expect after creation:
+What happens after creation:
 
-- This pipeline will not auto-run from Git pushes because it has `trigger: none`.
-- You will run it manually only when you want to destroy `dev` or `qa`.
+- it does not auto-run from Git pushes
+- you run it manually only when you want to destroy `qa` or `prod`
 
-### Step 10: Authorize the resources on first use
+### Step 10: Authorize protected resources on first use
 
-Azure DevOps may ask for permission the first time a pipeline uses a protected resource.
+Azure DevOps may ask for approval the first time a pipeline uses:
 
-Be ready to authorize:
+- the service connection
+- the secure file
+- the reusable environments
 
-- The service connection `terraform-aks-azurerm-svc-con`
-- The secure file `aks-terraform-devops-ssh-key-ubuntu.pub`
-- The Azure DevOps Environments used by the deployment jobs
+If a run pauses because of resource authorization:
 
-If a run pauses with an authorization message:
-
-1. Open the failed or waiting run.
-2. Read the authorization prompt.
+1. Open the run.
+2. Read the authorization message.
 3. Approve the resource for the pipeline.
-4. Re-run the pipeline if needed.
+4. Re-run if needed.
 
 ## How to use the provision pipeline
 
-### What happens when you commit to main
+### Automatic use
 
-The provision pipeline is configured with:
+The provision pipeline has:
 
 - `trigger: main`
 
-So when you push a change to `main`, Azure DevOps will:
+So a push to `main` can start the pipeline automatically.
 
-1. Start the provision pipeline.
-2. Validate the Terraform code.
-3. Deploy `dev`.
-4. Deploy `qa`.
+### Manual use
 
-### How to run the provision pipeline manually
+You can also run it manually:
 
-You can also start it manually:
-
-1. Open the `AKS Terraform Provision` pipeline.
+1. Open `AKS Terraform Provision`.
 2. Select `Run pipeline`.
 3. Confirm the branch.
 4. Start the run.
 
-### What each stage in the provision pipeline means
+### What each stage means
 
 #### Stage 1: TerraformValidate
 
 This stage:
 
-- Publishes the Terraform files as an artifact.
-- Installs Terraform on the build agent.
-- Runs `terraform init`.
-- Runs `terraform validate`.
+- publishes the Terraform code as a pipeline artifact
+- installs Terraform
+- runs `terraform init`
+- runs `terraform validate`
 
-Why it exists:
-
-- It checks the Terraform syntax and backend configuration before trying to deploy resources.
-
-#### Stage 2: DeployDevAKSCluster
+#### Stage 2: TerraformQaPlan
 
 This stage:
 
-- Downloads the SSH public key from Secure Files.
-- Initializes Terraform with the `aks-dev.tfstate` backend key.
-- Creates a Terraform plan for `dev`.
-- Applies that plan.
+- downloads the Terraform artifact
+- downloads the SSH public key
+- initializes Terraform with `aks-qa.tfstate`
+- runs the QA plan
+- publishes a QA plan bundle with the `.tfplan` file and a readable `.txt` summary
 
 #### Stage 3: DeployQaAKSCluster
 
 This stage:
 
-- Downloads the SSH public key from Secure Files.
-- Initializes Terraform with the `aks-qa.tfstate` backend key.
-- Creates a Terraform plan for `qa`.
-- Applies that plan.
+- waits for the `qa` environment approval
+- applies the exact reviewed QA plan
+
+#### Stage 4: TerraformProdPlan
+
+This stage starts only after QA apply succeeds.
+
+It:
+
+- initializes Terraform with `aks-prod.tfstate`
+- runs the prod plan
+- publishes a prod plan bundle
+
+#### Stage 5: DeployProdAKSCluster
+
+This stage:
+
+- waits for the `prod` environment approval
+- applies the exact reviewed prod plan
 
 ## How to use the destroy pipeline
 
 ### When to use it
 
-Use the destroy pipeline only when you intentionally want to delete an AKS environment and its Terraform-managed resources.
+Use the destroy pipeline only when you intentionally want to delete the QA or prod AKS environment.
 
 Do not use it for normal updates.
 
 ### How to run it
 
-1. Open the `AKS Terraform Destroy` pipeline.
+1. Open `AKS Terraform Destroy`.
 2. Select `Run pipeline`.
-3. Choose the `targetEnvironment` parameter:
-   - `dev`
+3. Choose `targetEnvironment`:
    - `qa`
+   - `prod`
 4. Confirm the branch.
 5. Start the run.
 
-### What each stage in the destroy pipeline means
+### What each stage means
 
 #### Stage 1: TerraformValidate
 
-This checks the Terraform code before any destroy work happens.
+Checks the Terraform code before any destroy action begins.
 
 #### Stage 2: TerraformDestroyPlan
 
 This stage:
 
-- Downloads the Terraform artifact.
-- Downloads the SSH public key.
-- Initializes Terraform against the selected state file.
-- Runs `terraform plan -destroy`.
-- Publishes the reviewed destroy plan artifact.
-
-Why this is important:
-
-- It lets you review what Terraform plans to delete before the actual destroy begins.
+- downloads the Terraform artifact
+- downloads the SSH public key
+- initializes Terraform against the selected state file
+- runs `terraform plan -destroy`
+- publishes a destroy plan bundle with the binary plan and readable summary
 
 #### Stage 3: TerraformDestroy
 
 This stage:
 
-- Waits on the Azure DevOps Environment approval.
-- Downloads the reviewed destroy plan artifact.
-- Initializes Terraform.
-- Applies the exact destroy plan that was already created.
+- waits for approval on `qa` or `prod`
+- downloads the reviewed destroy plan
+- applies that exact destroy plan
 
-Why this is safer:
+## What approvers should review
 
-- It prevents the destroy step from generating a new and different plan after approval.
-
-### What to review before approving destroy
-
-Before approving the destroy environment:
+Before approving either provision or destroy:
 
 1. Open the pipeline run.
-2. Open the artifact named:
-   - `dev-destroy-plan` for dev runs, or
-   - `qa-destroy-plan` for qa runs
-3. Open the `.txt` plan summary.
-4. Confirm the resources listed for deletion are the ones you expect.
-5. Approve only after verifying the plan.
+2. Open the published plan artifact.
+3. Read the `.txt` summary created by `terraform show`.
+4. Confirm the resources and changes match expectations.
+5. Approve only after review.
 
-## Beginner checklist: first successful setup
+Artifact names you will see:
 
-You are ready when all of the following are true:
+- `qa-plan`
+- `prod-plan`
+- `qa-destroy-plan`
+- `prod-destroy-plan`
 
-- The Terraform task extension is available.
-- The service connection `terraform-aks-azurerm-svc-con` exists.
-- The SSH Secure File exists with the correct name.
-- The Terraform backend storage exists and is reachable.
-- The environments `dev`, `qa`, `aks-destroy-dev`, and `aks-destroy-qa` exist.
-- The destroy environments have approval checks with a 120-minute timeout.
-- The provision pipeline has been created.
-- The destroy pipeline has been created.
+## Beginner checklist
+
+You are ready when all of these are true:
+
+- the Terraform extension is available
+- the service connection `terraform-aks-azurerm-svc-con` exists
+- the secure file `aks-terraform-devops-ssh-key-ubuntu.pub` exists
+- the Terraform backend storage exists and is reachable
+- the reusable environments `qa` and `prod` exist
+- the `qa` and `prod` environments have approval checks
+- the provision pipeline exists
+- the destroy pipeline exists
 
 ## Common problems and how to fix them
 
 ### Problem: Terraform task is not recognized
 
-Possible cause:
+Cause:
 
-- The Terraform extension is not installed in Azure DevOps.
+- the Terraform extension is not installed
 
 Fix:
 
@@ -488,9 +495,9 @@ Fix:
 
 Possible causes:
 
-- The secure file was not uploaded.
-- The file name does not match the YAML.
-- The pipeline was not authorized to use the file.
+- the file was not uploaded
+- the name does not match the YAML
+- the pipeline is not authorized to use it
 
 Fix:
 
@@ -502,8 +509,8 @@ Fix:
 
 Possible causes:
 
-- The backend storage account or container does not exist.
-- The service connection does not have access.
+- the backend storage account or container does not exist
+- the service connection does not have access
 
 Fix:
 
@@ -512,78 +519,49 @@ Fix:
 3. Verify the blob container `tfstatefiles` exists.
 4. Verify the service connection can access them.
 
-### Problem: Deployment fails with authorization errors
-
-Possible cause:
-
-- The service connection does not have the needed Azure role assignments.
-
-Fix:
-
-1. Open Azure IAM for the target scope.
-2. Check the identity behind the service connection.
-3. Add the necessary roles.
-4. Run the pipeline again.
-
-### Problem: Destroy pipeline does not pause for approval
+### Problem: Pipeline does not pause for approval after plan
 
 Possible causes:
 
-- The environment `aks-destroy-dev` or `aks-destroy-qa` does not exist.
-- The environment exists, but no approval check was added.
-- The deployment job points to a different environment name than the one you configured.
+- the `qa` or `prod` environment does not exist
+- the environment exists but has no approval check
+- the approval check is configured on the wrong environment
 
 Fix:
 
-1. Open the destroy YAML and confirm the environment name.
-2. Open `Pipelines` -> `Environments`.
-3. Confirm the environment exists with the exact same name.
-4. Confirm an `Approval` check is configured.
+1. Open `Pipelines` -> `Environments`.
+2. Confirm `qa` and `prod` exist.
+3. Confirm both have an `Approval` check.
+4. Confirm the deployment jobs in the YAML point to `qa` and `prod`.
 
-### Problem: The provision pipeline does not auto-run
+### Problem: Provision pipeline no longer manages the old dev environment
 
-Possible causes:
+Cause:
 
-- The change was not pushed to `main`.
-- The pipeline was created against a different branch.
-- Triggers are disabled in Azure DevOps settings.
+- the pipeline now targets `qa` and `prod`
+- the old `dev` state key is no longer used by the pipeline
 
 Fix:
 
-1. Confirm your commit reached `main`.
-2. Confirm the pipeline points to the correct YAML file.
-3. Check pipeline trigger settings in Azure DevOps.
-
-## If you change names later
-
-If you rename any of these, update both Azure DevOps and the YAML files:
-
-- service connection names
-- secure file names
-- environment names
-- Terraform backend resource names
-- branch trigger names
-
-If the names do not match, the pipelines usually fail immediately.
+- decide whether `dev` should be retired or migrated into `prod`
+- if it should become `prod`, migrate the Terraform state before relying on the new prod workflow
 
 ## Safe operating recommendations
 
-- Test the provision pipeline in a non-production subscription first.
-- Test the destroy pipeline only on a disposable environment first.
-- Keep destroy approvals limited to a small admin or platform group.
-- Review destroy plan artifacts before every approval.
-- Avoid changing pipeline names, environment names, and service connection names unless you also update the YAML.
+- test QA first before using prod
+- keep the `prod` approvers limited to a small trusted group
+- review every plan artifact before approval
+- do not treat renaming `dev` to `prod` as a simple label change; it is a state and naming change
 
 ## Quick summary
 
-If you only want the shortest version of the setup, do this:
+If you want the shortest setup checklist:
 
 1. Install the Terraform extension if Azure DevOps does not recognize the Terraform tasks.
 2. Create the service connection `terraform-aks-azurerm-svc-con`.
 3. Upload the secure file `aks-terraform-devops-ssh-key-ubuntu.pub`.
-4. Create environments `dev`, `qa`, `aks-destroy-dev`, and `aks-destroy-qa`.
-5. Add 120-minute approval checks to `aks-destroy-dev` and `aks-destroy-qa`.
+4. Create only two reusable environments: `qa` and `prod`.
+5. Add approval checks with a 120-minute timeout to both `qa` and `prod`.
 6. Create the provision pipeline from `AKS-Terraform/Terraform-provision-aks-cluster-pipeline.yml`.
 7. Create the destroy pipeline from `AKS-Terraform/Terraform-destroy-aks-cluster-pipeline.yml`.
-8. Run the provision pipeline.
-9. Run the destroy pipeline manually only when needed.
+8. Review plan artifacts before every approval.

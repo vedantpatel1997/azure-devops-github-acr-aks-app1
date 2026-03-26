@@ -7,12 +7,12 @@ variable "location" {
 
 variable "environment" {
   type        = string
-  description = "Short environment name used in resource naming, AKS node pool naming, and tagging."
-  default     = "dev"
+  description = "Short environment name used in resource naming, AKS node pool naming, and tagging. Supported values are qa and prod."
+  default     = "qa"
 
   validation {
-    condition     = can(regex("^[a-z0-9-]+$", var.environment))
-    error_message = "environment must contain only lowercase letters, numbers, and hyphens."
+    condition     = contains(["qa", "prod"], var.environment)
+    error_message = "environment must be either qa or prod."
   }
 }
 
