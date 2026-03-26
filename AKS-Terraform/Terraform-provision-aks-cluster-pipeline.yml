@@ -21,6 +21,8 @@ variables:
   value: 'strgterraformvp'
 - name: TERRAFORM_STATE_CONTAINER
   value: 'tfstatefiles'
+- name: SSH_PUBLIC_KEY_FILE
+  value: '$(Pipeline.Workspace)/secure-files/aks-terraform-devops-ssh-key-ubuntu.pub'
 
 stages:
 - stage: TerraformValidate
@@ -81,6 +83,11 @@ stages:
       inputs:
         secureFile: 'aks-terraform-devops-ssh-key-ubuntu.pub'
 
+    - script: |
+        mkdir -p "$(Pipeline.Workspace)/secure-files"
+        cp "$(sshkey.secureFilePath)" "$(SSH_PUBLIC_KEY_FILE)"
+      displayName: Stage SSH Public Key
+
     - task: TerraformInstaller@1
       displayName: Install Terraform
       inputs:
@@ -104,7 +111,7 @@ stages:
         provider: 'azurerm'
         command: 'plan'
         workingDirectory: '$(TERRAFORM_MANIFESTS_WORK_DIR)'
-        commandOptions: '-var ssh_public_key=$(sshkey.secureFilePath) -var environment=$(QA_ENVIRONMENT) -out $(TERRAFORM_MANIFESTS_WORK_DIR)/$(QA_ENVIRONMENT)-$(Build.BuildId).tfplan'
+        commandOptions: '-var ssh_public_key=$(SSH_PUBLIC_KEY_FILE) -var environment=$(QA_ENVIRONMENT) -out $(TERRAFORM_MANIFESTS_WORK_DIR)/$(QA_ENVIRONMENT)-$(Build.BuildId).tfplan'
         environmentServiceNameAzureRM: '$(TERRAFORM_SERVICE_CONNECTION)'
 
     - script: |
@@ -145,6 +152,17 @@ stages:
               buildType: 'current'
               artifactName: 'qa-plan'
               targetPath: '$(Pipeline.Workspace)/qa-plan-bundle'
+
+          - task: DownloadSecureFile@1
+            displayName: Download SSH Public Key
+            name: sshkey
+            inputs:
+              secureFile: 'aks-terraform-devops-ssh-key-ubuntu.pub'
+
+          - script: |
+              mkdir -p "$(Pipeline.Workspace)/secure-files"
+              cp "$(sshkey.secureFilePath)" "$(SSH_PUBLIC_KEY_FILE)"
+            displayName: Stage SSH Public Key
 
           - task: TerraformInstaller@1
             displayName: Install Terraform
@@ -192,6 +210,11 @@ stages:
       inputs:
         secureFile: 'aks-terraform-devops-ssh-key-ubuntu.pub'
 
+    - script: |
+        mkdir -p "$(Pipeline.Workspace)/secure-files"
+        cp "$(sshkey.secureFilePath)" "$(SSH_PUBLIC_KEY_FILE)"
+      displayName: Stage SSH Public Key
+
     - task: TerraformInstaller@1
       displayName: Install Terraform
       inputs:
@@ -215,7 +238,7 @@ stages:
         provider: 'azurerm'
         command: 'plan'
         workingDirectory: '$(TERRAFORM_MANIFESTS_WORK_DIR)'
-        commandOptions: '-var ssh_public_key=$(sshkey.secureFilePath) -var environment=$(PROD_ENVIRONMENT) -out $(TERRAFORM_MANIFESTS_WORK_DIR)/$(PROD_ENVIRONMENT)-$(Build.BuildId).tfplan'
+        commandOptions: '-var ssh_public_key=$(SSH_PUBLIC_KEY_FILE) -var environment=$(PROD_ENVIRONMENT) -out $(TERRAFORM_MANIFESTS_WORK_DIR)/$(PROD_ENVIRONMENT)-$(Build.BuildId).tfplan'
         environmentServiceNameAzureRM: '$(TERRAFORM_SERVICE_CONNECTION)'
 
     - script: |
@@ -256,6 +279,17 @@ stages:
               buildType: 'current'
               artifactName: 'prod-plan'
               targetPath: '$(Pipeline.Workspace)/prod-plan-bundle'
+
+          - task: DownloadSecureFile@1
+            displayName: Download SSH Public Key
+            name: sshkey
+            inputs:
+              secureFile: 'aks-terraform-devops-ssh-key-ubuntu.pub'
+
+          - script: |
+              mkdir -p "$(Pipeline.Workspace)/secure-files"
+              cp "$(sshkey.secureFilePath)" "$(SSH_PUBLIC_KEY_FILE)"
+            displayName: Stage SSH Public Key
 
           - task: TerraformInstaller@1
             displayName: Install Terraform

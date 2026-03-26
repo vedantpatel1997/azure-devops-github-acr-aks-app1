@@ -26,6 +26,8 @@ variables:
   value: 'strgterraformvp'
 - name: TERRAFORM_STATE_CONTAINER
   value: 'tfstatefiles'
+- name: SSH_PUBLIC_KEY_FILE
+  value: '$(Pipeline.Workspace)/secure-files/aks-terraform-devops-ssh-key-ubuntu.pub'
 
 stages:
 - stage: TerraformValidate
@@ -86,6 +88,11 @@ stages:
       inputs:
         secureFile: 'aks-terraform-devops-ssh-key-ubuntu.pub'
 
+    - script: |
+        mkdir -p "$(Pipeline.Workspace)/secure-files"
+        cp "$(sshkey.secureFilePath)" "$(SSH_PUBLIC_KEY_FILE)"
+      displayName: Stage SSH Public Key
+
     - task: TerraformInstaller@1
       displayName: Install Terraform
       inputs:
@@ -109,7 +116,7 @@ stages:
         provider: 'azurerm'
         command: 'plan'
         workingDirectory: '$(TERRAFORM_MANIFESTS_WORK_DIR)'
-        commandOptions: '-destroy -var ssh_public_key=$(sshkey.secureFilePath) -var environment=${{ parameters.targetEnvironment }} -out $(TERRAFORM_MANIFESTS_WORK_DIR)/${{ parameters.targetEnvironment }}-destroy-$(Build.BuildId).tfplan'
+        commandOptions: '-destroy -var ssh_public_key=$(SSH_PUBLIC_KEY_FILE) -var environment=${{ parameters.targetEnvironment }} -out $(TERRAFORM_MANIFESTS_WORK_DIR)/${{ parameters.targetEnvironment }}-destroy-$(Build.BuildId).tfplan'
         environmentServiceNameAzureRM: '$(TERRAFORM_SERVICE_CONNECTION)'
 
     - script: |
@@ -150,6 +157,17 @@ stages:
               buildType: 'current'
               artifactName: '${{ parameters.targetEnvironment }}-destroy-plan'
               targetPath: '$(Pipeline.Workspace)/destroy-plan-bundle'
+
+          - task: DownloadSecureFile@1
+            displayName: Download SSH Public Key
+            name: sshkey
+            inputs:
+              secureFile: 'aks-terraform-devops-ssh-key-ubuntu.pub'
+
+          - script: |
+              mkdir -p "$(Pipeline.Workspace)/secure-files"
+              cp "$(sshkey.secureFilePath)" "$(SSH_PUBLIC_KEY_FILE)"
+            displayName: Stage SSH Public Key
 
           - task: TerraformInstaller@1
             displayName: Install Terraform
