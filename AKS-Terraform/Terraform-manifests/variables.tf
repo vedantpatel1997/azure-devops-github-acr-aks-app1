@@ -19,7 +19,7 @@ variable "environment" {
 variable "organization_name" {
   type        = string
   description = "Short organization or team identifier used in resource naming."
-  default     = "vkp"
+  default     = "webathon"
 
   validation {
     condition     = can(regex("^[a-z0-9-]+$", var.organization_name))
