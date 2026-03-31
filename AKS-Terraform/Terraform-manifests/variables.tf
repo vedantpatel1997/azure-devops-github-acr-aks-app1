@@ -169,10 +169,22 @@ variable "system_node_pool_vm_size" {
   default     = "Standard_D2_v2"
 }
 
+variable "create_linux_user_node_pool" {
+  type        = bool
+  description = "Set to true to create the dedicated Linux user node pool and subnet."
+  default     = false
+}
+
 variable "linux_user_node_pool_vm_size" {
   type        = string
   description = "Virtual machine size for the Linux user node pool. Use a Premium SSD-capable SKU for stateful workloads such as MySQL."
   default     = "Standard_DS2_v2"
+}
+
+variable "create_windows_user_node_pool" {
+  type        = bool
+  description = "Set to true to create the dedicated Windows user node pool and subnet."
+  default     = false
 }
 
 variable "windows_user_node_pool_vm_size" {

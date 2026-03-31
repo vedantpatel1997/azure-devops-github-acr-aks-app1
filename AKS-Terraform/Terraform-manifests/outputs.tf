@@ -77,7 +77,7 @@ output "kube_config" {
 
 output "linux_user_node_pool_id" {
   description = "Resource ID of the Linux user node pool."
-  value       = azurerm_kubernetes_cluster_node_pool.linux_user.id
+  value       = try(azurerm_kubernetes_cluster_node_pool.linux_user[0].id, null)
 }
 
 output "system_node_pool_subnet_id" {
@@ -87,15 +87,15 @@ output "system_node_pool_subnet_id" {
 
 output "linux_user_node_pool_subnet_id" {
   description = "Resource ID of the subnet assigned to the Linux user node pool."
-  value       = azurerm_subnet.linux_user_node_pool.id
+  value       = try(azurerm_subnet.linux_user_node_pool[0].id, null)
 }
 
 output "windows_user_node_pool_subnet_id" {
   description = "Resource ID of the subnet assigned to the Windows user node pool."
-  value       = azurerm_subnet.windows_user_node_pool.id
+  value       = try(azurerm_subnet.windows_user_node_pool[0].id, null)
 }
 
 output "windows_user_node_pool_id" {
   description = "Resource ID of the Windows user node pool."
-  value       = azurerm_kubernetes_cluster_node_pool.windows_user.id
+  value       = try(azurerm_kubernetes_cluster_node_pool.windows_user[0].id, null)
 }

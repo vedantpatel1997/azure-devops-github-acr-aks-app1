@@ -14,6 +14,7 @@ resource "azurerm_subnet" "system_node_pool" {
 }
 
 resource "azurerm_subnet" "linux_user_node_pool" {
+  count                = var.create_linux_user_node_pool ? 1 : 0
   name                 = local.linux_user_subnet_name
   resource_group_name  = azurerm_resource_group.aks.name
   virtual_network_name = azurerm_virtual_network.aks.name
@@ -21,6 +22,7 @@ resource "azurerm_subnet" "linux_user_node_pool" {
 }
 
 resource "azurerm_subnet" "windows_user_node_pool" {
+  count                = var.create_windows_user_node_pool ? 1 : 0
   name                 = local.windows_user_subnet_name
   resource_group_name  = azurerm_resource_group.aks.name
   virtual_network_name = azurerm_virtual_network.aks.name

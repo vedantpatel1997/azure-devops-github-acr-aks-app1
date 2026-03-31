@@ -12,7 +12,7 @@ terraform {
     }
   }
 
-    backend "azurerm" {}
+  backend "azurerm" {}
 
   # Commented terraform backend as we are using devops pipeline to manage state. If you want to use local state, uncomment the backend block and configure as needed.
   # backend "azurerm" {

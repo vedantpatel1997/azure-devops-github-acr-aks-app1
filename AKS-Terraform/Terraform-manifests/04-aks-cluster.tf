@@ -48,9 +48,13 @@ resource "azurerm_kubernetes_cluster" "aks" {
     log_analytics_workspace_id = azurerm_log_analytics_workspace.aks.id
   }
 
-  windows_profile {
-    admin_username = var.windows_admin_username
-    admin_password = var.windows_admin_password
+  dynamic "windows_profile" {
+    for_each = var.create_windows_user_node_pool ? [1] : []
+
+    content {
+      admin_username = var.windows_admin_username
+      admin_password = var.windows_admin_password
+    }
   }
 
   linux_profile {

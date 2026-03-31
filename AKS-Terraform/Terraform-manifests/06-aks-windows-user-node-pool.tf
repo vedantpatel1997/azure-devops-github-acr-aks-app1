@@ -1,5 +1,6 @@
 # Dedicated Windows user node pool for Windows application workloads.
 resource "azurerm_kubernetes_cluster_node_pool" "windows_user" {
+  count                       = var.create_windows_user_node_pool ? 1 : 0
   name                        = local.windows_user_node_pool_name
   kubernetes_cluster_id       = azurerm_kubernetes_cluster.aks.id
   vm_size                     = var.windows_user_node_pool_vm_size
@@ -14,7 +15,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "windows_user" {
   orchestrator_version        = var.kubernetes_version
   auto_scaling_enabled        = true
   zones                       = var.user_node_pool_zones
-  vnet_subnet_id              = azurerm_subnet.windows_user_node_pool.id
+  vnet_subnet_id              = azurerm_subnet.windows_user_node_pool[0].id
   temporary_name_for_rotation = local.windows_user_node_pool_rotation_name
   node_labels                 = local.windows_user_node_pool_labels
   tags                        = local.windows_user_node_pool_tags
