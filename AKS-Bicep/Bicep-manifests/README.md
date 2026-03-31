@@ -56,6 +56,12 @@ That is the Bicep equivalent of how the Terraform project creates both the resou
 
 The naming style intentionally mirrors the Terraform project.
 
+One important implementation detail:
+
+- Terraform `substr()` tolerates a requested length that is longer than the source string
+- ARM/Bicep `substring()` does not
+- the Bicep node pool names therefore use `min(length(...), maxLength)` so short environment names like `qa` still validate correctly
+
 Examples for `dev` in `westus2` with the current shared parameter file value `organizationName = bicep`:
 
 - resource group: `rg-bicep-aks-dev-westus2`

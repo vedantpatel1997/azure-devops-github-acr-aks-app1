@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "6003479220033246938"
+      "templateHash": "11249724329843063382"
     }
   },
   "parameters": {
@@ -318,7 +318,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.41.2.15936",
-              "templateHash": "16796129784859486718"
+              "templateHash": "789232733117448410"
             }
           },
           "parameters": {
@@ -500,9 +500,12 @@
             "systemSubnetName": "[format('snet-{0}-system', variables('nameSuffix'))]",
             "linuxUserSubnetName": "[format('snet-{0}-linux', variables('nameSuffix'))]",
             "windowsUserSubnetName": "[format('snet-{0}-windows', variables('nameSuffix'))]",
-            "systemNodePoolName": "[substring(format('sys{0}01', variables('nodePoolEnvironmentTag')), 0, 8)]",
-            "linuxUserNodePoolName": "[substring(format('lin{0}01', variables('nodePoolEnvironmentTag')), 0, 8)]",
-            "windowsUserNodePoolName": "[substring(format('win{0}1', variables('windowsNodePoolTag')), 0, 6)]",
+            "systemNodePoolNameBase": "[format('sys{0}01', variables('nodePoolEnvironmentTag'))]",
+            "linuxUserNodePoolNameBase": "[format('lin{0}01', variables('nodePoolEnvironmentTag'))]",
+            "windowsUserNodePoolNameBase": "[format('win{0}1', variables('windowsNodePoolTag'))]",
+            "systemNodePoolName": "[substring(variables('systemNodePoolNameBase'), 0, min(length(variables('systemNodePoolNameBase')), 8))]",
+            "linuxUserNodePoolName": "[substring(variables('linuxUserNodePoolNameBase'), 0, min(length(variables('linuxUserNodePoolNameBase')), 8))]",
+            "windowsUserNodePoolName": "[substring(variables('windowsUserNodePoolNameBase'), 0, min(length(variables('windowsUserNodePoolNameBase')), 6))]",
             "commonTags": "[union(createObject('environment', parameters('environment'), 'managed_by', 'bicep', 'owner', parameters('organizationName'), 'platform', 'aks', 'project', 'aks-bicep'), parameters('additionalTags'))]",
             "systemNodePoolLabels": {
               "environment": "[parameters('environment')]",

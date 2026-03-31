@@ -100,9 +100,12 @@ var virtualNetworkName = 'vnet-${nameSuffix}'
 var systemSubnetName = 'snet-${nameSuffix}-system'
 var linuxUserSubnetName = 'snet-${nameSuffix}-linux'
 var windowsUserSubnetName = 'snet-${nameSuffix}-windows'
-var systemNodePoolName = substring('sys${nodePoolEnvironmentTag}01', 0, 8)
-var linuxUserNodePoolName = substring('lin${nodePoolEnvironmentTag}01', 0, 8)
-var windowsUserNodePoolName = substring('win${windowsNodePoolTag}1', 0, 6)
+var systemNodePoolNameBase = 'sys${nodePoolEnvironmentTag}01'
+var linuxUserNodePoolNameBase = 'lin${nodePoolEnvironmentTag}01'
+var windowsUserNodePoolNameBase = 'win${windowsNodePoolTag}1'
+var systemNodePoolName = substring(systemNodePoolNameBase, 0, min(length(systemNodePoolNameBase), 8))
+var linuxUserNodePoolName = substring(linuxUserNodePoolNameBase, 0, min(length(linuxUserNodePoolNameBase), 8))
+var windowsUserNodePoolName = substring(windowsUserNodePoolNameBase, 0, min(length(windowsUserNodePoolNameBase), 6))
 
 var commonTags = union({
   environment: environment
