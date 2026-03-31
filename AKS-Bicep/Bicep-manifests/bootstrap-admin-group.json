@@ -1,0 +1,220 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "8464083748376086341"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "westus2",
+      "metadata": {
+        "description": "Azure region where the AKS platform resources will be deployed."
+      }
+    },
+    "environment": {
+      "type": "string",
+      "defaultValue": "dev",
+      "allowedValues": [
+        "dev",
+        "qa",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Short environment name used in resource naming. Supported values are dev, qa, and prod."
+      }
+    },
+    "organizationName": {
+      "type": "string",
+      "defaultValue": "vp",
+      "metadata": {
+        "description": "Short organization or team identifier used in resource naming."
+      }
+    },
+    "additionalTags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Additional Azure tags to merge with the template defaults."
+      }
+    },
+    "aksAdminUserPrincipalName": {
+      "type": "string",
+      "defaultValue": "admin@MngEnvMCAP797847.onmicrosoft.com",
+      "metadata": {
+        "description": "Microsoft Entra user principal name to add to the AKS admin group."
+      }
+    }
+  },
+  "variables": {
+    "environmentSlug": "[toLower(parameters('environment'))]",
+    "locationSlug": "[toLower(replace(parameters('location'), ' ', ''))]",
+    "resourceGroupName": "[format('rg-{0}-aks-{1}-{2}', parameters('organizationName'), variables('environmentSlug'), variables('locationSlug'))]",
+    "commonTags": "[union(createObject('environment', parameters('environment'), 'managed_by', 'bicep', 'owner', parameters('organizationName'), 'platform', 'aks', 'project', 'aks-bicep'), parameters('additionalTags'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('commonTags')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('aks-admin-group-{0}', variables('environmentSlug'))]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "organizationName": {
+            "value": "[parameters('organizationName')]"
+          },
+          "aksAdminUserPrincipalName": {
+            "value": "[parameters('aksAdminUserPrincipalName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "9928248282252928723"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region where the AKS platform resources will be deployed."
+              }
+            },
+            "environment": {
+              "type": "string",
+              "allowedValues": [
+                "dev",
+                "qa",
+                "prod"
+              ],
+              "metadata": {
+                "description": "Short environment name used in resource naming. Supported values are dev, qa, and prod."
+              }
+            },
+            "organizationName": {
+              "type": "string",
+              "metadata": {
+                "description": "Short organization or team identifier used in resource naming."
+              }
+            },
+            "aksAdminUserPrincipalName": {
+              "type": "string",
+              "metadata": {
+                "description": "Microsoft Entra user principal name to add to the AKS admin group."
+              }
+            }
+          },
+          "variables": {
+            "environmentSlug": "[toLower(parameters('environment'))]",
+            "locationSlug": "[toLower(replace(parameters('location'), ' ', ''))]",
+            "clusterSuffix": "[format('{0}-{1}-{2}', parameters('organizationName'), variables('environmentSlug'), variables('locationSlug'))]",
+            "clusterName": "[format('aks-{0}', variables('clusterSuffix'))]",
+            "clusterAdminGroupDisplayName": "[format('grp-aksadmin-{0}', variables('clusterName'))]",
+            "clusterAdminGroupUniqueName": "[variables('clusterAdminGroupDisplayName')]"
+          },
+          "imports": {
+            "microsoftGraphV1": {
+              "provider": "MicrosoftGraph",
+              "version": "1.0.0"
+            }
+          },
+          "resources": {
+            "clusterAdminUser": {
+              "existing": true,
+              "import": "microsoftGraphV1",
+              "type": "Microsoft.Graph/users@v1.0",
+              "properties": {
+                "userPrincipalName": "[parameters('aksAdminUserPrincipalName')]"
+              }
+            },
+            "clusterAdmins": {
+              "import": "microsoftGraphV1",
+              "type": "Microsoft.Graph/groups@v1.0",
+              "properties": {
+                "description": "[format('Microsoft Entra group for AKS cluster administrators on {0}.', variables('clusterName'))]",
+                "displayName": "[variables('clusterAdminGroupDisplayName')]",
+                "mailEnabled": false,
+                "mailNickname": "[variables('clusterAdminGroupDisplayName')]",
+                "members": {
+                  "relationships": [
+                    "[reference('clusterAdminUser').id]"
+                  ]
+                },
+                "securityEnabled": true,
+                "uniqueName": "[variables('clusterAdminGroupUniqueName')]"
+              },
+              "dependsOn": [
+                "clusterAdminUser"
+              ]
+            }
+          },
+          "outputs": {
+            "aksAdminGroupObjectId": {
+              "type": "string",
+              "value": "[reference('clusterAdmins').id]"
+            },
+            "aksAdminGroupDisplayName": {
+              "type": "string",
+              "value": "[variables('clusterAdminGroupDisplayName')]"
+            },
+            "aksAdminGroupUniqueName": {
+              "type": "string",
+              "value": "[variables('clusterAdminGroupUniqueName')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('resourceGroupName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "resourceGroupId": {
+      "type": "string",
+      "value": "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('resourceGroupName'))]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[variables('resourceGroupName')]"
+    },
+    "aksAdminGroupObjectId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-admin-group-{0}', variables('environmentSlug'))), '2025-04-01').outputs.aksAdminGroupObjectId.value]"
+    },
+    "aksAdminGroupDisplayName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-admin-group-{0}', variables('environmentSlug'))), '2025-04-01').outputs.aksAdminGroupDisplayName.value]"
+    },
+    "aksAdminGroupUniqueName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-admin-group-{0}', variables('environmentSlug'))), '2025-04-01').outputs.aksAdminGroupUniqueName.value]"
+    }
+  }
+}

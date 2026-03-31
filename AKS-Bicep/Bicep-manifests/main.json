@@ -1,0 +1,898 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "6003479220033246938"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "westus2",
+      "metadata": {
+        "description": "Azure region where the AKS platform resources will be deployed."
+      }
+    },
+    "environment": {
+      "type": "string",
+      "defaultValue": "dev",
+      "allowedValues": [
+        "dev",
+        "qa",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Short environment name used in resource naming. Supported values are dev, qa, and prod."
+      }
+    },
+    "organizationName": {
+      "type": "string",
+      "defaultValue": "vp",
+      "metadata": {
+        "description": "Short organization or team identifier used in resource naming."
+      }
+    },
+    "kubernetesVersion": {
+      "type": "string",
+      "defaultValue": "1.34.3",
+      "metadata": {
+        "description": "Pinned AKS Kubernetes version for the control plane and node pools."
+      }
+    },
+    "additionalTags": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Additional Azure tags to merge with the template defaults."
+      }
+    },
+    "aksAdminGroupObjectId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the Microsoft Entra group configured as the AKS admin group."
+      }
+    },
+    "aksAdminGroupDisplayName": {
+      "type": "string",
+      "metadata": {
+        "description": "Display name of the Microsoft Entra group configured as the AKS admin group."
+      }
+    },
+    "aksAdminGroupUniqueName": {
+      "type": "string",
+      "metadata": {
+        "description": "Unique name of the Microsoft Entra group configured as the AKS admin group."
+      }
+    },
+    "sshPublicKeyData": {
+      "type": "string",
+      "metadata": {
+        "description": "SSH public key data used for Linux node access."
+      }
+    },
+    "linuxAdminUsername": {
+      "type": "string",
+      "defaultValue": "ubuntu",
+      "metadata": {
+        "description": "Linux administrator username for AKS Linux nodes."
+      }
+    },
+    "windowsAdminUsername": {
+      "type": "string",
+      "defaultValue": "azureuser",
+      "metadata": {
+        "description": "Windows administrator username for AKS Windows nodes."
+      }
+    },
+    "windowsAdminPassword": {
+      "type": "securestring",
+      "defaultValue": "Password@4124567980",
+      "metadata": {
+        "description": "Windows administrator password for AKS Windows nodes. Override this for any real deployment."
+      }
+    },
+    "logAnalyticsRetentionDays": {
+      "type": "int",
+      "defaultValue": 30,
+      "minValue": 30,
+      "maxValue": 730,
+      "metadata": {
+        "description": "Retention period for the Log Analytics workspace."
+      }
+    },
+    "aksVnetAddressSpace": {
+      "type": "array",
+      "defaultValue": [
+        "10.240.0.0/16"
+      ],
+      "metadata": {
+        "description": "Address space assigned to the custom virtual network hosting the AKS node pools."
+      }
+    },
+    "systemNodePoolSubnetAddressPrefixes": {
+      "type": "array",
+      "defaultValue": [
+        "10.240.0.0/22"
+      ],
+      "metadata": {
+        "description": "Subnet CIDR ranges for the AKS system node pool."
+      }
+    },
+    "linuxUserNodePoolSubnetAddressPrefixes": {
+      "type": "array",
+      "defaultValue": [
+        "10.240.4.0/22"
+      ],
+      "metadata": {
+        "description": "Subnet CIDR ranges for the AKS Linux user node pool."
+      }
+    },
+    "windowsUserNodePoolSubnetAddressPrefixes": {
+      "type": "array",
+      "defaultValue": [
+        "10.240.8.0/22"
+      ],
+      "metadata": {
+        "description": "Subnet CIDR ranges for the AKS Windows user node pool."
+      }
+    },
+    "aksServiceCidr": {
+      "type": "string",
+      "defaultValue": "10.2.0.0/24",
+      "metadata": {
+        "description": "Kubernetes service CIDR used by the AKS cluster."
+      }
+    },
+    "aksDnsServiceIp": {
+      "type": "string",
+      "defaultValue": "10.2.0.10",
+      "metadata": {
+        "description": "Cluster DNS service IP allocated from the service CIDR."
+      }
+    },
+    "systemNodePoolVmSize": {
+      "type": "string",
+      "defaultValue": "Standard_D2_v2",
+      "metadata": {
+        "description": "Virtual machine size for the AKS system node pool."
+      }
+    },
+    "createLinuxUserNodePool": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Set to true to create the dedicated Linux user node pool and subnet."
+      }
+    },
+    "linuxUserNodePoolVmSize": {
+      "type": "string",
+      "defaultValue": "Standard_DS2_v2",
+      "metadata": {
+        "description": "Virtual machine size for the Linux user node pool."
+      }
+    },
+    "createWindowsUserNodePool": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Set to true to create the dedicated Windows user node pool and subnet."
+      }
+    },
+    "windowsUserNodePoolVmSize": {
+      "type": "string",
+      "defaultValue": "Standard_D2_v2",
+      "metadata": {
+        "description": "Virtual machine size for the Windows user node pool."
+      }
+    },
+    "systemNodePoolZones": {
+      "type": "array",
+      "defaultValue": [
+        "3"
+      ],
+      "metadata": {
+        "description": "Availability zones for the AKS system node pool."
+      }
+    },
+    "userNodePoolZones": {
+      "type": "array",
+      "defaultValue": [
+        "3"
+      ],
+      "metadata": {
+        "description": "Availability zones for the AKS user node pools."
+      }
+    }
+  },
+  "variables": {
+    "environmentSlug": "[toLower(parameters('environment'))]",
+    "locationSlug": "[toLower(replace(parameters('location'), ' ', ''))]",
+    "resourceGroupName": "[format('rg-{0}-aks-{1}-{2}', parameters('organizationName'), variables('environmentSlug'), variables('locationSlug'))]",
+    "commonTags": "[union(createObject('environment', parameters('environment'), 'managed_by', 'bicep', 'owner', parameters('organizationName'), 'platform', 'aks', 'project', 'aks-bicep'), parameters('additionalTags'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('resourceGroupName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('commonTags')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('aks-platform-{0}', variables('environmentSlug'))]",
+      "resourceGroup": "[variables('resourceGroupName')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "organizationName": {
+            "value": "[parameters('organizationName')]"
+          },
+          "kubernetesVersion": {
+            "value": "[parameters('kubernetesVersion')]"
+          },
+          "additionalTags": {
+            "value": "[parameters('additionalTags')]"
+          },
+          "aksAdminGroupObjectId": {
+            "value": "[parameters('aksAdminGroupObjectId')]"
+          },
+          "aksAdminGroupDisplayName": {
+            "value": "[parameters('aksAdminGroupDisplayName')]"
+          },
+          "aksAdminGroupUniqueName": {
+            "value": "[parameters('aksAdminGroupUniqueName')]"
+          },
+          "sshPublicKeyData": {
+            "value": "[parameters('sshPublicKeyData')]"
+          },
+          "linuxAdminUsername": {
+            "value": "[parameters('linuxAdminUsername')]"
+          },
+          "windowsAdminUsername": {
+            "value": "[parameters('windowsAdminUsername')]"
+          },
+          "windowsAdminPassword": {
+            "value": "[parameters('windowsAdminPassword')]"
+          },
+          "logAnalyticsRetentionDays": {
+            "value": "[parameters('logAnalyticsRetentionDays')]"
+          },
+          "aksVnetAddressSpace": {
+            "value": "[parameters('aksVnetAddressSpace')]"
+          },
+          "systemNodePoolSubnetAddressPrefixes": {
+            "value": "[parameters('systemNodePoolSubnetAddressPrefixes')]"
+          },
+          "linuxUserNodePoolSubnetAddressPrefixes": {
+            "value": "[parameters('linuxUserNodePoolSubnetAddressPrefixes')]"
+          },
+          "windowsUserNodePoolSubnetAddressPrefixes": {
+            "value": "[parameters('windowsUserNodePoolSubnetAddressPrefixes')]"
+          },
+          "aksServiceCidr": {
+            "value": "[parameters('aksServiceCidr')]"
+          },
+          "aksDnsServiceIp": {
+            "value": "[parameters('aksDnsServiceIp')]"
+          },
+          "systemNodePoolVmSize": {
+            "value": "[parameters('systemNodePoolVmSize')]"
+          },
+          "createLinuxUserNodePool": {
+            "value": "[parameters('createLinuxUserNodePool')]"
+          },
+          "linuxUserNodePoolVmSize": {
+            "value": "[parameters('linuxUserNodePoolVmSize')]"
+          },
+          "createWindowsUserNodePool": {
+            "value": "[parameters('createWindowsUserNodePool')]"
+          },
+          "windowsUserNodePoolVmSize": {
+            "value": "[parameters('windowsUserNodePoolVmSize')]"
+          },
+          "systemNodePoolZones": {
+            "value": "[parameters('systemNodePoolZones')]"
+          },
+          "userNodePoolZones": {
+            "value": "[parameters('userNodePoolZones')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.41.2.15936",
+              "templateHash": "16796129784859486718"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region where the AKS platform resources will be deployed."
+              }
+            },
+            "environment": {
+              "type": "string",
+              "allowedValues": [
+                "dev",
+                "qa",
+                "prod"
+              ],
+              "metadata": {
+                "description": "Short environment name used in resource naming. Supported values are dev, qa, and prod."
+              }
+            },
+            "organizationName": {
+              "type": "string",
+              "metadata": {
+                "description": "Short organization or team identifier used in resource naming."
+              }
+            },
+            "kubernetesVersion": {
+              "type": "string",
+              "metadata": {
+                "description": "Pinned AKS Kubernetes version for the control plane and node pools."
+              }
+            },
+            "additionalTags": {
+              "type": "object",
+              "defaultValue": {},
+              "metadata": {
+                "description": "Additional Azure tags to merge with the template defaults."
+              }
+            },
+            "sshPublicKeyData": {
+              "type": "string",
+              "metadata": {
+                "description": "SSH public key data used for Linux node access."
+              }
+            },
+            "linuxAdminUsername": {
+              "type": "string",
+              "metadata": {
+                "description": "Linux administrator username for AKS Linux nodes."
+              }
+            },
+            "windowsAdminUsername": {
+              "type": "string",
+              "metadata": {
+                "description": "Windows administrator username for AKS Windows nodes."
+              }
+            },
+            "windowsAdminPassword": {
+              "type": "securestring",
+              "metadata": {
+                "description": "Windows administrator password for AKS Windows nodes."
+              }
+            },
+            "logAnalyticsRetentionDays": {
+              "type": "int",
+              "metadata": {
+                "description": "Retention period for the Log Analytics workspace."
+              }
+            },
+            "aksVnetAddressSpace": {
+              "type": "array",
+              "metadata": {
+                "description": "Address space assigned to the custom virtual network hosting the AKS node pools."
+              }
+            },
+            "systemNodePoolSubnetAddressPrefixes": {
+              "type": "array",
+              "metadata": {
+                "description": "Subnet CIDR ranges for the AKS system node pool."
+              }
+            },
+            "linuxUserNodePoolSubnetAddressPrefixes": {
+              "type": "array",
+              "metadata": {
+                "description": "Subnet CIDR ranges for the AKS Linux user node pool."
+              }
+            },
+            "windowsUserNodePoolSubnetAddressPrefixes": {
+              "type": "array",
+              "metadata": {
+                "description": "Subnet CIDR ranges for the AKS Windows user node pool."
+              }
+            },
+            "aksServiceCidr": {
+              "type": "string",
+              "metadata": {
+                "description": "Kubernetes service CIDR used by the AKS cluster."
+              }
+            },
+            "aksDnsServiceIp": {
+              "type": "string",
+              "metadata": {
+                "description": "Cluster DNS service IP allocated from the service CIDR."
+              }
+            },
+            "systemNodePoolVmSize": {
+              "type": "string",
+              "metadata": {
+                "description": "Virtual machine size for the AKS system node pool."
+              }
+            },
+            "createLinuxUserNodePool": {
+              "type": "bool",
+              "metadata": {
+                "description": "Set to true to create the dedicated Linux user node pool and subnet."
+              }
+            },
+            "linuxUserNodePoolVmSize": {
+              "type": "string",
+              "metadata": {
+                "description": "Virtual machine size for the Linux user node pool."
+              }
+            },
+            "createWindowsUserNodePool": {
+              "type": "bool",
+              "metadata": {
+                "description": "Set to true to create the dedicated Windows user node pool and subnet."
+              }
+            },
+            "windowsUserNodePoolVmSize": {
+              "type": "string",
+              "metadata": {
+                "description": "Virtual machine size for the Windows user node pool."
+              }
+            },
+            "systemNodePoolZones": {
+              "type": "array",
+              "metadata": {
+                "description": "Availability zones for the AKS system node pool."
+              }
+            },
+            "userNodePoolZones": {
+              "type": "array",
+              "metadata": {
+                "description": "Availability zones for the AKS user node pools."
+              }
+            },
+            "aksAdminGroupObjectId": {
+              "type": "string",
+              "metadata": {
+                "description": "Object ID of the Microsoft Entra group configured as the AKS admin group."
+              }
+            },
+            "aksAdminGroupDisplayName": {
+              "type": "string",
+              "metadata": {
+                "description": "Display name of the Microsoft Entra group configured as the AKS admin group."
+              }
+            },
+            "aksAdminGroupUniqueName": {
+              "type": "string",
+              "metadata": {
+                "description": "Unique name of the Microsoft Entra group configured as the AKS admin group."
+              }
+            }
+          },
+          "variables": {
+            "environmentSlug": "[toLower(parameters('environment'))]",
+            "locationSlug": "[toLower(replace(parameters('location'), ' ', ''))]",
+            "envNoDash": "[replace(variables('environmentSlug'), '-', '')]",
+            "nodePoolEnvironmentTag": "[if(greaterOrEquals(length(variables('envNoDash')), 3), substring(variables('envNoDash'), 0, 3), variables('envNoDash'))]",
+            "windowsNodePoolTag": "[if(greaterOrEquals(length(variables('envNoDash')), 2), substring(variables('envNoDash'), 0, 2), variables('envNoDash'))]",
+            "nameSuffix": "[format('{0}-aks-{1}-{2}', parameters('organizationName'), variables('environmentSlug'), variables('locationSlug'))]",
+            "clusterSuffix": "[format('{0}-{1}-{2}', parameters('organizationName'), variables('environmentSlug'), variables('locationSlug'))]",
+            "clusterName": "[format('aks-{0}', variables('clusterSuffix'))]",
+            "nodeResourceGroupName": "[format('rg-{0}-nodes', variables('nameSuffix'))]",
+            "logAnalyticsWorkspaceName": "[format('log-{0}', variables('nameSuffix'))]",
+            "virtualNetworkName": "[format('vnet-{0}', variables('nameSuffix'))]",
+            "systemSubnetName": "[format('snet-{0}-system', variables('nameSuffix'))]",
+            "linuxUserSubnetName": "[format('snet-{0}-linux', variables('nameSuffix'))]",
+            "windowsUserSubnetName": "[format('snet-{0}-windows', variables('nameSuffix'))]",
+            "systemNodePoolName": "[substring(format('sys{0}01', variables('nodePoolEnvironmentTag')), 0, 8)]",
+            "linuxUserNodePoolName": "[substring(format('lin{0}01', variables('nodePoolEnvironmentTag')), 0, 8)]",
+            "windowsUserNodePoolName": "[substring(format('win{0}1', variables('windowsNodePoolTag')), 0, 6)]",
+            "commonTags": "[union(createObject('environment', parameters('environment'), 'managed_by', 'bicep', 'owner', parameters('organizationName'), 'platform', 'aks', 'project', 'aks-bicep'), parameters('additionalTags'))]",
+            "systemNodePoolLabels": {
+              "environment": "[parameters('environment')]",
+              "nodepool-os": "linux",
+              "nodepool-type": "system",
+              "workload": "system-apps"
+            },
+            "linuxUserNodePoolLabels": {
+              "environment": "[parameters('environment')]",
+              "nodepool-os": "linux",
+              "nodepool-type": "user",
+              "workload": "java-apps"
+            },
+            "windowsUserNodePoolLabels": {
+              "environment": "[parameters('environment')]",
+              "nodepool-os": "windows",
+              "nodepool-type": "user",
+              "workload": "dotnet-apps"
+            },
+            "systemNodePoolTags": "[union(variables('commonTags'), createObject('node_pool', variables('systemNodePoolName'), 'os', 'linux', 'role', 'system', 'workload', 'system-apps'))]",
+            "linuxUserNodePoolTags": "[union(variables('commonTags'), createObject('node_pool', variables('linuxUserNodePoolName'), 'os', 'linux', 'role', 'user', 'workload', 'java-apps'))]",
+            "windowsUserNodePoolTags": "[union(variables('commonTags'), createObject('node_pool', variables('windowsUserNodePoolName'), 'os', 'windows', 'role', 'user', 'workload', 'dotnet-apps'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[variables('logAnalyticsWorkspaceName')]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('commonTags')]",
+              "properties": {
+                "features": {
+                  "disableLocalAuth": false,
+                  "enableLogAccessUsingOnlyResourcePermissions": true
+                },
+                "publicNetworkAccessForIngestion": "Enabled",
+                "publicNetworkAccessForQuery": "Enabled",
+                "retentionInDays": "[parameters('logAnalyticsRetentionDays')]",
+                "sku": {
+                  "name": "PerGB2018"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2024-05-01",
+              "name": "[variables('virtualNetworkName')]",
+              "location": "[parameters('location')]",
+              "tags": "[variables('commonTags')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": "[parameters('aksVnetAddressSpace')]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks/subnets",
+              "apiVersion": "2024-05-01",
+              "name": "[format('{0}/{1}', variables('virtualNetworkName'), variables('systemSubnetName'))]",
+              "properties": {
+                "addressPrefixes": "[parameters('systemNodePoolSubnetAddressPrefixes')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworkName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createLinuxUserNodePool')]",
+              "type": "Microsoft.Network/virtualNetworks/subnets",
+              "apiVersion": "2024-05-01",
+              "name": "[format('{0}/{1}', variables('virtualNetworkName'), variables('linuxUserSubnetName'))]",
+              "properties": {
+                "addressPrefixes": "[parameters('linuxUserNodePoolSubnetAddressPrefixes')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworkName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createWindowsUserNodePool')]",
+              "type": "Microsoft.Network/virtualNetworks/subnets",
+              "apiVersion": "2024-05-01",
+              "name": "[format('{0}/{1}', variables('virtualNetworkName'), variables('windowsUserSubnetName'))]",
+              "properties": {
+                "addressPrefixes": "[parameters('windowsUserNodePoolSubnetAddressPrefixes')]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworkName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.ContainerService/managedClusters",
+              "apiVersion": "2024-10-01",
+              "name": "[variables('clusterName')]",
+              "location": "[parameters('location')]",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "sku": {
+                "name": "Base",
+                "tier": "Free"
+              },
+              "tags": "[variables('commonTags')]",
+              "properties": {
+                "aadProfile": {
+                  "adminGroupObjectIDs": [
+                    "[parameters('aksAdminGroupObjectId')]"
+                  ],
+                  "enableAzureRBAC": false,
+                  "managed": true
+                },
+                "addonProfiles": {
+                  "azurepolicy": {
+                    "enabled": true
+                  },
+                  "omsagent": {
+                    "config": {
+                      "logAnalyticsWorkspaceResourceID": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName'))]",
+                      "useAADAuth": "true"
+                    },
+                    "enabled": true
+                  }
+                },
+                "agentPoolProfiles": [
+                  {
+                    "availabilityZones": "[parameters('systemNodePoolZones')]",
+                    "count": 1,
+                    "enableAutoScaling": true,
+                    "maxCount": 3,
+                    "minCount": 1,
+                    "mode": "System",
+                    "name": "[variables('systemNodePoolName')]",
+                    "nodeLabels": "[variables('systemNodePoolLabels')]",
+                    "orchestratorVersion": "[parameters('kubernetesVersion')]",
+                    "tags": "[variables('systemNodePoolTags')]",
+                    "type": "VirtualMachineScaleSets",
+                    "upgradeSettings": {
+                      "drainTimeoutInMinutes": 5,
+                      "maxSurge": "10%",
+                      "nodeSoakDurationInMinutes": 1
+                    },
+                    "vmSize": "[parameters('systemNodePoolVmSize')]",
+                    "vnetSubnetID": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('systemSubnetName'))]"
+                  }
+                ],
+                "autoUpgradeProfile": {
+                  "nodeOSUpgradeChannel": "NodeImage"
+                },
+                "dnsPrefix": "[variables('clusterName')]",
+                "enableRBAC": true,
+                "kubernetesVersion": "[parameters('kubernetesVersion')]",
+                "linuxProfile": {
+                  "adminUsername": "[parameters('linuxAdminUsername')]",
+                  "ssh": {
+                    "publicKeys": [
+                      {
+                        "keyData": "[parameters('sshPublicKeyData')]"
+                      }
+                    ]
+                  }
+                },
+                "networkProfile": {
+                  "dnsServiceIP": "[parameters('aksDnsServiceIp')]",
+                  "loadBalancerSku": "standard",
+                  "networkPlugin": "azure",
+                  "serviceCidr": "[parameters('aksServiceCidr')]"
+                },
+                "nodeResourceGroup": "[variables('nodeResourceGroupName')]",
+                "oidcIssuerProfile": {
+                  "enabled": true
+                },
+                "supportPlan": "KubernetesOfficial",
+                "windowsProfile": "[if(parameters('createWindowsUserNodePool'), createObject('adminPassword', parameters('windowsAdminPassword'), 'adminUsername', parameters('windowsAdminUsername')), null())]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('systemSubnetName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createLinuxUserNodePool')]",
+              "type": "Microsoft.ContainerService/managedClusters/agentPools",
+              "apiVersion": "2024-10-01",
+              "name": "[format('{0}/{1}', variables('clusterName'), variables('linuxUserNodePoolName'))]",
+              "properties": {
+                "availabilityZones": "[parameters('userNodePoolZones')]",
+                "count": 1,
+                "enableAutoScaling": true,
+                "maxCount": 3,
+                "minCount": 1,
+                "mode": "User",
+                "nodeLabels": "[variables('linuxUserNodePoolLabels')]",
+                "orchestratorVersion": "[parameters('kubernetesVersion')]",
+                "osDiskSizeGB": 30,
+                "osType": "Linux",
+                "scaleSetPriority": "Regular",
+                "tags": "[variables('linuxUserNodePoolTags')]",
+                "type": "VirtualMachineScaleSets",
+                "upgradeSettings": {
+                  "drainTimeoutInMinutes": 5,
+                  "maxSurge": "10%",
+                  "nodeSoakDurationInMinutes": 1
+                },
+                "vmSize": "[parameters('linuxUserNodePoolVmSize')]",
+                "vnetSubnetID": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('linuxUserSubnetName'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerService/managedClusters', variables('clusterName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('linuxUserSubnetName'))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createWindowsUserNodePool')]",
+              "type": "Microsoft.ContainerService/managedClusters/agentPools",
+              "apiVersion": "2024-10-01",
+              "name": "[format('{0}/{1}', variables('clusterName'), variables('windowsUserNodePoolName'))]",
+              "properties": {
+                "availabilityZones": "[parameters('userNodePoolZones')]",
+                "count": 1,
+                "enableAutoScaling": true,
+                "maxCount": 3,
+                "minCount": 1,
+                "mode": "User",
+                "nodeLabels": "[variables('windowsUserNodePoolLabels')]",
+                "orchestratorVersion": "[parameters('kubernetesVersion')]",
+                "osDiskSizeGB": 50,
+                "osSKU": "Windows2022",
+                "osType": "Windows",
+                "scaleSetPriority": "Regular",
+                "tags": "[variables('windowsUserNodePoolTags')]",
+                "type": "VirtualMachineScaleSets",
+                "upgradeSettings": {
+                  "drainTimeoutInMinutes": 5,
+                  "maxSurge": "10%",
+                  "nodeSoakDurationInMinutes": 1
+                },
+                "vmSize": "[parameters('windowsUserNodePoolVmSize')]",
+                "vnetSubnetID": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('windowsUserSubnetName'))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerService/managedClusters', variables('clusterName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('windowsUserSubnetName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "location": {
+              "type": "string",
+              "value": "[parameters('location')]"
+            },
+            "clusterName": {
+              "type": "string",
+              "value": "[variables('clusterName')]"
+            },
+            "clusterId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ContainerService/managedClusters', variables('clusterName'))]"
+            },
+            "virtualNetworkName": {
+              "type": "string",
+              "value": "[variables('virtualNetworkName')]"
+            },
+            "virtualNetworkId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworkName'))]"
+            },
+            "configuredKubernetesVersion": {
+              "type": "string",
+              "value": "[parameters('kubernetesVersion')]"
+            },
+            "logAnalyticsWorkspaceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('logAnalyticsWorkspaceName'))]"
+            },
+            "logAnalyticsWorkspaceName": {
+              "type": "string",
+              "value": "[variables('logAnalyticsWorkspaceName')]"
+            },
+            "aksAdminGroupObjectId": {
+              "type": "string",
+              "value": "[parameters('aksAdminGroupObjectId')]"
+            },
+            "aksAdminGroupDisplayName": {
+              "type": "string",
+              "value": "[parameters('aksAdminGroupDisplayName')]"
+            },
+            "aksAdminGroupUniqueName": {
+              "type": "string",
+              "value": "[parameters('aksAdminGroupUniqueName')]"
+            },
+            "systemNodePoolSubnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('systemSubnetName'))]"
+            },
+            "linuxUserNodePoolSubnetId": {
+              "type": "string",
+              "value": "[if(parameters('createLinuxUserNodePool'), resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('linuxUserSubnetName')), '')]"
+            },
+            "windowsUserNodePoolSubnetId": {
+              "type": "string",
+              "value": "[if(parameters('createWindowsUserNodePool'), resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('windowsUserSubnetName')), '')]"
+            },
+            "linuxUserNodePoolId": {
+              "type": "string",
+              "value": "[if(parameters('createLinuxUserNodePool'), resourceId('Microsoft.ContainerService/managedClusters/agentPools', variables('clusterName'), variables('linuxUserNodePoolName')), '')]"
+            },
+            "windowsUserNodePoolId": {
+              "type": "string",
+              "value": "[if(parameters('createWindowsUserNodePool'), resourceId('Microsoft.ContainerService/managedClusters/agentPools', variables('clusterName'), variables('windowsUserNodePoolName')), '')]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('resourceGroupName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "location": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.location.value]"
+    },
+    "resourceGroupId": {
+      "type": "string",
+      "value": "[subscriptionResourceId('Microsoft.Resources/resourceGroups', variables('resourceGroupName'))]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "value": "[variables('resourceGroupName')]"
+    },
+    "clusterName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.clusterName.value]"
+    },
+    "clusterId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.clusterId.value]"
+    },
+    "virtualNetworkName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.virtualNetworkName.value]"
+    },
+    "virtualNetworkId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.virtualNetworkId.value]"
+    },
+    "configuredKubernetesVersion": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.configuredKubernetesVersion.value]"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.logAnalyticsWorkspaceId.value]"
+    },
+    "logAnalyticsWorkspaceName": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.logAnalyticsWorkspaceName.value]"
+    },
+    "aksAdminGroupObjectId": {
+      "type": "string",
+      "value": "[parameters('aksAdminGroupObjectId')]"
+    },
+    "aksAdminGroupDisplayName": {
+      "type": "string",
+      "value": "[parameters('aksAdminGroupDisplayName')]"
+    },
+    "aksAdminGroupUniqueName": {
+      "type": "string",
+      "value": "[parameters('aksAdminGroupUniqueName')]"
+    },
+    "systemNodePoolSubnetId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.systemNodePoolSubnetId.value]"
+    },
+    "linuxUserNodePoolSubnetId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.linuxUserNodePoolSubnetId.value]"
+    },
+    "windowsUserNodePoolSubnetId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.windowsUserNodePoolSubnetId.value]"
+    },
+    "linuxUserNodePoolId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.linuxUserNodePoolId.value]"
+    },
+    "windowsUserNodePoolId": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, variables('resourceGroupName')), 'Microsoft.Resources/deployments', format('aks-platform-{0}', variables('environmentSlug'))), '2025-04-01').outputs.windowsUserNodePoolId.value]"
+    }
+  }
+}

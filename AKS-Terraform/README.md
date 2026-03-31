@@ -4,6 +4,19 @@ This folder contains the Terraform code and Azure DevOps YAML pipelines used to 
 
 This guide is written for beginners and matches the current pipeline design in this repo.
 
+## Looking for the Bicep version?
+
+A parallel Bicep implementation now exists in:
+
+- `../AKS-Bicep`
+
+That folder creates the same AKS platform shape with Bicep and Azure DevOps pipelines so you can compare:
+
+- Terraform `plan` and `apply`
+- Bicep `what-if` and `deployment create`
+- Terraform destroy behavior
+- Bicep explicit delete workflow
+
 ## Current design at a glance
 
 This project now uses three reusable Azure DevOps Environments:

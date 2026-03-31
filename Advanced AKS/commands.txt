@@ -1,0 +1,56 @@
+# PowerShell on Windows
+# Open Git Bash from PowerShell with:
+bash
+
+# Then run the following inside the Bash shell to enable kubectl autocomplete and aliases.
+# Edit your Bash profile:
+vim ~/.bashrc
+
+# Add these lines to ~/.bashrc:
+source <(kubectl completion bash)
+alias k=kubectl
+complete -o default -F __start_kubectl k
+alias kn='k config set-context --current --namespace'
+
+# Reload the Bash profile:
+source ~/.bashrc
+
+whoami
+k run nginx --image nginx
+
+k get pod
+
+k exec -it nginx -- bash
+
+whoami
+
+curl -v microsoft.com
+exit
+
+k exec -it nginx -- curl -v microsoft.com
+
+k delete pod nginx
+
+k get pod -A
+
+k exec -it konnectivity-agent-5889f66f-f9kh7  -n kube-system -- bash
+k exec -it konnectivity-agent-5889f66f-f9kh7  -n kube-system -- bin/bash
+k exec -it konnectivity-agent-5889f66f-f9kh7  -n kube-system -- bin/sh
+k exec -it konnectivity-agent-5889f66f-f9kh7  -n kube-system -- sh
+k exec -it konnectivity-agent-5889f66f-f9kh7  -n kube-system -- whoami
+k exec -it  metrics-server-b887b5d7-4hpzv   -n kube-system -- whoami
+
+
+k get node
+k get pod
+clear
+
+kubectl debug node/aks-sysdev01-11033437-vmss000000 -it --image=mcr.microsoft.com/cbl-mariner/busybox:2.0
+
+
+kubectl debug node/aks-sysdev01-11033437-vmss000000 -it --image=ubuntu
+exit
+
+k node-shell aks-sysdev01-11033437-vmss000000
+
+`

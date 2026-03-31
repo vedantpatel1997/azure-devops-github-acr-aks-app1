@@ -1,0 +1,211 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+parameters:
+- name: targetEnvironments
+  displayName: Target environments to destroy
+  type: stringList
+  default:
+  - dev
+  values:
+  - dev
+  - qa
+  - prod
+
+variables:
+- name: BICEP_SOURCE_DIR
+  value: '$(System.DefaultWorkingDirectory)/AKS-Bicep'
+- name: BICEP_WORK_DIR
+  value: '$(Pipeline.Workspace)/AKS-Bicep-out'
+- name: BICEP_MANIFESTS_SOURCE_DIR
+  value: '$(System.DefaultWorkingDirectory)/AKS-Bicep/Bicep-manifests'
+- name: BICEP_MANIFESTS_WORK_DIR
+  value: '$(Pipeline.Workspace)/AKS-Bicep-out/Bicep-manifests'
+- name: BICEP_SCRIPTS_WORK_DIR
+  value: '$(Pipeline.Workspace)/AKS-Bicep-out/scripts'
+- name: AZURE_SERVICE_CONNECTION
+  value: 'terraform-aks-azurerm-svc-con'
+
+stages:
+- stage: BicepValidate
+  displayName: Validate Bicep for Destroy
+  jobs:
+  - job: BicepValidateJob
+    displayName: Validate Bicep Manifests
+    continueOnError: false
+    steps:
+    - task: AzureCLI@2
+      displayName: Restore and Build Bicep
+      inputs:
+        azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          $ErrorActionPreference = 'Stop'
+
+          az bicep upgrade
+          az bicep restore --file "$(BICEP_MANIFESTS_SOURCE_DIR)/bootstrap-admin-group.bicep"
+          az bicep build --file "$(BICEP_MANIFESTS_SOURCE_DIR)/bootstrap-admin-group.bicep"
+          az bicep restore --file "$(BICEP_MANIFESTS_SOURCE_DIR)/main.bicep"
+          az bicep build --file "$(BICEP_MANIFESTS_SOURCE_DIR)/main.bicep"
+
+    - task: PublishPipelineArtifact@1
+      displayName: Publish AKS Bicep Workspace
+      inputs:
+        targetPath: '$(BICEP_SOURCE_DIR)'
+        artifact: 'AKS-Bicep-out'
+        publishLocation: 'pipeline'
+
+- ${{ each environmentName in parameters.targetEnvironments }}:
+  - stage: BicepDestroyReview_${{ environmentName }}
+    displayName: Create Destroy Review Bundle (${{ environmentName }})
+    dependsOn: BicepValidate
+    jobs:
+    - job: BicepDestroyReviewJob_${{ environmentName }}
+      displayName: Generate Destroy Review Bundle (${{ environmentName }})
+      steps:
+      - task: DownloadPipelineArtifact@2
+        displayName: Download AKS Bicep Workspace
+        inputs:
+          buildType: 'current'
+          artifactName: 'AKS-Bicep-out'
+          targetPath: '$(BICEP_WORK_DIR)'
+
+      - task: AzureCLI@2
+        displayName: Inspect Resources for Destroy
+        inputs:
+          azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+          scriptType: 'pscore'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            $ErrorActionPreference = 'Stop'
+
+            $reviewDir = "$(Pipeline.Workspace)/destroy-review-bundle-${{ environmentName }}"
+            New-Item -ItemType Directory -Force -Path $reviewDir | Out-Null
+            $sharedParameterFilePath = "$(BICEP_MANIFESTS_WORK_DIR)/shared.parameters.json"
+            $environmentParameterFilePath = "$(BICEP_MANIFESTS_WORK_DIR)/environments/${{ environmentName }}.parameters.json"
+
+            $effectiveConfigJson = & "$(BICEP_SCRIPTS_WORK_DIR)/Get-AksBicepDeploymentConfig.ps1" `
+              -BootstrapTemplateFile "$(BICEP_MANIFESTS_WORK_DIR)/bootstrap-admin-group.bicep" `
+              -MainTemplateFile "$(BICEP_MANIFESTS_WORK_DIR)/main.bicep" `
+              -ParameterFiles @($sharedParameterFilePath, $environmentParameterFilePath)
+
+            $effectiveConfigJson | Set-Content -LiteralPath (Join-Path $reviewDir 'effective-config.json') -Encoding utf8
+            $effectiveConfig = $effectiveConfigJson | ConvertFrom-Json
+
+            $resolvedJson = & "$(BICEP_SCRIPTS_WORK_DIR)/Resolve-AksBicepNames.ps1" `
+              -Environment '${{ environmentName }}' `
+              -Location $effectiveConfig.location `
+              -OrganizationName $effectiveConfig.organizationName
+
+            $resolvedJson | Set-Content -LiteralPath (Join-Path $reviewDir 'resolved-values.json') -Encoding utf8
+            $resolved = $resolvedJson | ConvertFrom-Json
+
+            $resourceGroupExists = (az group exists --name $resolved.resourceGroupName --output tsv).Trim()
+            Set-Content -LiteralPath (Join-Path $reviewDir 'resource-group-exists.txt') -Value $resourceGroupExists -Encoding utf8
+
+            if ($resourceGroupExists -eq 'true') {
+              az resource list `
+                --resource-group $resolved.resourceGroupName `
+                --query "[].{name:name,type:type,location:location}" `
+                --output json > (Join-Path $reviewDir 'resource-group-resources.json')
+
+              az resource list `
+                --resource-group $resolved.resourceGroupName `
+                --query "[].{name:name,type:type,location:location}" `
+                --output table > (Join-Path $reviewDir 'resource-group-resources.txt')
+            }
+            else {
+              '[]' | Set-Content -LiteralPath (Join-Path $reviewDir 'resource-group-resources.json') -Encoding utf8
+              'Resource group not found.' | Set-Content -LiteralPath (Join-Path $reviewDir 'resource-group-resources.txt') -Encoding utf8
+            }
+
+            $graphLookup = & az rest --method GET --url $resolved.graphGroupDeleteUrl --output json 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $graphLookup | Set-Content -LiteralPath (Join-Path $reviewDir 'graph-group.json') -Encoding utf8
+              $graphGroupState = 'present'
+            }
+            elseif ($graphLookup -match 'ResourceNotFound' -or $graphLookup -match 'Request_ResourceNotFound') {
+              '{"status":"not-found"}' | Set-Content -LiteralPath (Join-Path $reviewDir 'graph-group.json') -Encoding utf8
+              $graphGroupState = 'not-found'
+            }
+            else {
+              throw "Microsoft Graph lookup failed for $($resolved.clusterAdminGroupUniqueName). $graphLookup"
+            }
+
+            @"
+            Environment: ${{ environmentName }}
+            Review type: Explicit Bicep destroy workflow
+            Resource group: $($resolved.resourceGroupName)
+            Resource group exists: $resourceGroupExists
+            AKS cluster name: $($resolved.clusterName)
+            Node resource group: $($resolved.nodeResourceGroupName)
+            Microsoft Entra group unique name: $($resolved.clusterAdminGroupUniqueName)
+            Microsoft Graph group state: $graphGroupState
+            Shared parameter file: $sharedParameterFilePath
+            Environment parameter file: $environmentParameterFilePath
+
+            Destroy in Bicep is not state-driven like Terraform destroy.
+            This review bundle shows the current Azure resources in the resource group
+            plus the Microsoft Entra group that will be deleted separately.
+            "@ | Set-Content -LiteralPath (Join-Path $reviewDir '${{ environmentName }}-destroy-review.txt') -Encoding utf8
+
+      - task: PublishPipelineArtifact@1
+        displayName: Publish Destroy Review Bundle
+        inputs:
+          targetPath: '$(Pipeline.Workspace)/destroy-review-bundle-${{ environmentName }}'
+          artifact: '${{ environmentName }}-destroy-review'
+          publishLocation: 'pipeline'
+
+  - stage: BicepDestroy_${{ environmentName }}
+    displayName: Destroy AKS Platform (${{ environmentName }})
+    dependsOn: BicepDestroyReview_${{ environmentName }}
+    jobs:
+    - deployment: DestroyAKSPlatform_${{ environmentName }}
+      displayName: Destroy AKS Platform (${{ environmentName }})
+      environment: '${{ environmentName }}'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - task: DownloadPipelineArtifact@2
+              displayName: Download Reviewed Destroy Bundle
+              inputs:
+                buildType: 'current'
+                artifactName: '${{ environmentName }}-destroy-review'
+                targetPath: '$(Pipeline.Workspace)/destroy-review-bundle-${{ environmentName }}'
+
+            - task: AzureCLI@2
+              displayName: Delete Azure Resources and Entra Group
+              inputs:
+                azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+                scriptType: 'pscore'
+                scriptLocation: 'inlineScript'
+                inlineScript: |
+                  $ErrorActionPreference = 'Stop'
+
+                  $reviewDir = "$(Pipeline.Workspace)/destroy-review-bundle-${{ environmentName }}"
+                  $resolved = Get-Content -Raw -LiteralPath (Join-Path $reviewDir 'resolved-values.json') | ConvertFrom-Json
+                  $graphGroup = Get-Content -Raw -LiteralPath (Join-Path $reviewDir 'graph-group.json')
+                  $resourceGroupExists = (Get-Content -Raw -LiteralPath (Join-Path $reviewDir 'resource-group-exists.txt')).Trim()
+
+                  if ($resourceGroupExists -eq 'true') {
+                    az group delete --name $resolved.resourceGroupName --yes
+                    az group wait --deleted --name $resolved.resourceGroupName --timeout 3600
+                  }
+                  else {
+                    Write-Host "Resource group $($resolved.resourceGroupName) does not exist. Skipping Azure resource deletion."
+                  }
+
+                  if ($graphGroup -notmatch '"status":"not-found"') {
+                    $deleteResult = & az rest --method DELETE --url $resolved.graphGroupDeleteUrl 2>&1
+                    if ($LASTEXITCODE -ne 0 -and $deleteResult -notmatch 'ResourceNotFound' -and $deleteResult -notmatch 'Request_ResourceNotFound') {
+                      throw "Microsoft Graph delete failed for $($resolved.clusterAdminGroupUniqueName). $deleteResult"
+                    }
+                  }
+                  else {
+                    Write-Host "Microsoft Entra group $($resolved.clusterAdminGroupUniqueName) was not found. Skipping Microsoft Graph deletion."
+                  }

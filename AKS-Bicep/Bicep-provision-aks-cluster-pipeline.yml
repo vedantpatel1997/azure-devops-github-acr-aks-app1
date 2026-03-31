@@ -1,0 +1,304 @@
+trigger:
+  branches:
+    include:
+    - main
+  paths:
+    include:
+    - AKS-Bicep/Bicep-manifests/**
+    - AKS-Bicep/scripts/**
+    - AKS-Bicep/Bicep-provision-aks-cluster-pipeline.yml
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+parameters:
+- name: targetEnvironments
+  displayName: Target environments to provision
+  type: stringList
+  default:
+  - dev
+  - qa
+  - prod
+  values:
+  - dev
+  - qa
+  - prod
+
+variables:
+- name: BICEP_SOURCE_DIR
+  value: '$(System.DefaultWorkingDirectory)/AKS-Bicep'
+- name: BICEP_WORK_DIR
+  value: '$(Pipeline.Workspace)/AKS-Bicep-out'
+- name: BICEP_MANIFESTS_SOURCE_DIR
+  value: '$(System.DefaultWorkingDirectory)/AKS-Bicep/Bicep-manifests'
+- name: BICEP_MANIFESTS_WORK_DIR
+  value: '$(Pipeline.Workspace)/AKS-Bicep-out/Bicep-manifests'
+- name: BICEP_SCRIPTS_WORK_DIR
+  value: '$(Pipeline.Workspace)/AKS-Bicep-out/scripts'
+- name: AZURE_SERVICE_CONNECTION
+  value: 'terraform-aks-azurerm-svc-con'
+
+stages:
+- stage: BicepValidate
+  displayName: Validate Bicep
+  jobs:
+  - job: BicepValidateJob
+    displayName: Validate Bicep Manifests
+    continueOnError: false
+    steps:
+    - task: AzureCLI@2
+      displayName: Restore and Build Bicep
+      inputs:
+        azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+          $ErrorActionPreference = 'Stop'
+
+          az bicep upgrade
+          az bicep restore --file "$(BICEP_MANIFESTS_SOURCE_DIR)/bootstrap-admin-group.bicep"
+          az bicep build --file "$(BICEP_MANIFESTS_SOURCE_DIR)/bootstrap-admin-group.bicep"
+          az bicep restore --file "$(BICEP_MANIFESTS_SOURCE_DIR)/main.bicep"
+          az bicep build --file "$(BICEP_MANIFESTS_SOURCE_DIR)/main.bicep"
+
+    - task: PublishPipelineArtifact@1
+      displayName: Publish AKS Bicep Workspace
+      inputs:
+        targetPath: '$(BICEP_SOURCE_DIR)'
+        artifact: 'AKS-Bicep-out'
+        publishLocation: 'pipeline'
+
+- ${{ each environmentName in parameters.targetEnvironments }}:
+  - stage: BicepWhatIf_${{ environmentName }}
+    displayName: Create Bicep Review Bundle (${{ environmentName }})
+    dependsOn: BicepValidate
+    jobs:
+    - job: BicepWhatIfJob_${{ environmentName }}
+      displayName: Generate What-If Review Bundle (${{ environmentName }})
+      steps:
+      - task: DownloadPipelineArtifact@2
+        displayName: Download AKS Bicep Workspace
+        inputs:
+          buildType: 'current'
+          artifactName: 'AKS-Bicep-out'
+          targetPath: '$(BICEP_WORK_DIR)'
+
+      - task: DownloadSecureFile@1
+        displayName: Download SSH Public Key
+        name: sshkey
+        inputs:
+          secureFile: 'aks-terraform-devops-ssh-key-ubuntu.pub'
+
+      - task: AzureCLI@2
+        displayName: Run Bicep What-If
+        inputs:
+          azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+          scriptType: 'pscore'
+          scriptLocation: 'inlineScript'
+          inlineScript: |
+            $ErrorActionPreference = 'Stop'
+
+            az bicep upgrade
+            az bicep restore --file "$(BICEP_MANIFESTS_WORK_DIR)/bootstrap-admin-group.bicep"
+            az bicep restore --file "$(BICEP_MANIFESTS_WORK_DIR)/main.bicep"
+
+            $reviewDir = "$(Pipeline.Workspace)/review-bundle-${{ environmentName }}"
+            New-Item -ItemType Directory -Force -Path $reviewDir | Out-Null
+            $sharedParameterFilePath = "$(BICEP_MANIFESTS_WORK_DIR)/shared.parameters.json"
+            $environmentParameterFilePath = "$(BICEP_MANIFESTS_WORK_DIR)/environments/${{ environmentName }}.parameters.json"
+            $sharedParameterFile = "@$sharedParameterFilePath"
+            $environmentParameterFile = "@$environmentParameterFilePath"
+
+            $effectiveConfigJson = & "$(BICEP_SCRIPTS_WORK_DIR)/Get-AksBicepDeploymentConfig.ps1" `
+              -BootstrapTemplateFile "$(BICEP_MANIFESTS_WORK_DIR)/bootstrap-admin-group.bicep" `
+              -MainTemplateFile "$(BICEP_MANIFESTS_WORK_DIR)/main.bicep" `
+              -ParameterFiles @($sharedParameterFilePath, $environmentParameterFilePath)
+
+            $effectiveConfigJson | Set-Content -LiteralPath (Join-Path $reviewDir 'effective-config.json') -Encoding utf8
+            $effectiveConfig = $effectiveConfigJson | ConvertFrom-Json
+
+            $resolvedJson = & "$(BICEP_SCRIPTS_WORK_DIR)/Resolve-AksBicepNames.ps1" `
+              -Environment '${{ environmentName }}' `
+              -Location $effectiveConfig.location `
+              -OrganizationName $effectiveConfig.organizationName
+
+            $resolvedJson | Set-Content -LiteralPath (Join-Path $reviewDir 'resolved-values.json') -Encoding utf8
+            $resolved = $resolvedJson | ConvertFrom-Json
+
+            $sshPublicKeyData = (Get-Content -Raw -LiteralPath "$(sshkey.secureFilePath)").Trim()
+            $bootstrapWhatIfPath = Join-Path $reviewDir '${{ environmentName }}-bootstrap-what-if.json'
+            $platformWhatIfPath = Join-Path $reviewDir '${{ environmentName }}-platform-what-if.json'
+
+            az deployment sub what-if `
+              --name "aks-bicep-${{ environmentName }}-bootstrap-whatif-$(Build.BuildId)" `
+              --location "$($effectiveConfig.location)" `
+              --template-file "$(BICEP_MANIFESTS_WORK_DIR)/bootstrap-admin-group.bicep" `
+              --parameters $sharedParameterFile $environmentParameterFile `
+              --result-format FullResourcePayloads `
+              --output json > $bootstrapWhatIfPath
+
+            $graphLookup = & az rest --method GET --url $resolved.graphGroupDeleteUrl --output json 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $graphGroup = $graphLookup | ConvertFrom-Json
+              $graphLookup | Set-Content -LiteralPath (Join-Path $reviewDir 'graph-group.json') -Encoding utf8
+              $aksAdminGroupObjectId = $graphGroup.id
+              $aksAdminGroupDisplayName = $graphGroup.displayName
+              $aksAdminGroupUniqueName = if ($graphGroup.PSObject.Properties.Name -contains 'uniqueName') { $graphGroup.uniqueName } else { $resolved.clusterAdminGroupUniqueName }
+              $adminGroupIdSource = 'existing-group-object-id'
+            }
+            elseif ($graphLookup -match 'ResourceNotFound' -or $graphLookup -match 'Request_ResourceNotFound') {
+              $aksAdminGroupObjectId = [guid]::NewGuid().Guid
+              $aksAdminGroupDisplayName = $resolved.clusterAdminGroupUniqueName
+              $aksAdminGroupUniqueName = $resolved.clusterAdminGroupUniqueName
+              @"
+              {
+                "status": "not-found",
+                "previewObjectId": "$aksAdminGroupObjectId",
+                "displayName": "$aksAdminGroupDisplayName",
+                "uniqueName": "$aksAdminGroupUniqueName"
+              }
+              "@ | Set-Content -LiteralPath (Join-Path $reviewDir 'graph-group.json') -Encoding utf8
+              $adminGroupIdSource = 'preview-placeholder-guid'
+            }
+            else {
+              throw "Microsoft Graph lookup failed for $($resolved.clusterAdminGroupUniqueName). $graphLookup"
+            }
+
+            az deployment sub what-if `
+              --name "aks-bicep-${{ environmentName }}-platform-whatif-$(Build.BuildId)" `
+              --location "$($effectiveConfig.location)" `
+              --template-file "$(BICEP_MANIFESTS_WORK_DIR)/main.bicep" `
+              --parameters $sharedParameterFile $environmentParameterFile `
+              --parameters aksAdminGroupObjectId="$aksAdminGroupObjectId" `
+                           aksAdminGroupDisplayName="$aksAdminGroupDisplayName" `
+                           aksAdminGroupUniqueName="$aksAdminGroupUniqueName" `
+                           sshPublicKeyData="$sshPublicKeyData" `
+              --result-format FullResourcePayloads `
+              --output json > $platformWhatIfPath
+
+            @"
+            Environment: ${{ environmentName }}
+            Review type: Bicep bootstrap + platform what-if
+            Deployment location: $($effectiveConfig.location)
+            Resource group: $($resolved.resourceGroupName)
+            AKS cluster: $($resolved.clusterName)
+            Node resource group: $($resolved.nodeResourceGroupName)
+            Log Analytics workspace: $($resolved.logAnalyticsWorkspaceName)
+            Virtual network: $($resolved.virtualNetworkName)
+            AKS admin group: $($resolved.clusterAdminGroupUniqueName)
+            Organization name source value: $($effectiveConfig.organizationName)
+            Kubernetes version source value: $($effectiveConfig.kubernetesVersion)
+            AKS admin UPN source value: $($effectiveConfig.aksAdminUserPrincipalName)
+            Shared parameter file: $sharedParameterFilePath
+            Environment parameter file: $environmentParameterFilePath
+            Bootstrap what-if output: $bootstrapWhatIfPath
+            Platform what-if output: $platformWhatIfPath
+            Admin group object ID source for preview: $adminGroupIdSource
+
+            Review both what-if JSON files before approving the deployment job.
+            Microsoft Graph extensible resources have limited what-if support, so the bootstrap what-if may not show the Entra group in full detail.
+            If the Entra group does not exist yet, the platform what-if uses a temporary GUID only for preview.
+            The real deployment first creates or updates the Entra group and then deploys AKS with the real group object ID.
+            "@ | Set-Content -LiteralPath (Join-Path $reviewDir '${{ environmentName }}-review.txt') -Encoding utf8
+
+      - task: PublishPipelineArtifact@1
+        displayName: Publish Bicep Review Bundle
+        inputs:
+          targetPath: '$(Pipeline.Workspace)/review-bundle-${{ environmentName }}'
+          artifact: '${{ environmentName }}-what-if'
+          publishLocation: 'pipeline'
+
+  - stage: BicepDeploy_${{ environmentName }}
+    displayName: Deploy Bicep Template (${{ environmentName }})
+    dependsOn: BicepWhatIf_${{ environmentName }}
+    jobs:
+    - deployment: DeployAKSCluster_${{ environmentName }}
+      displayName: Deploy AKS Cluster (${{ environmentName }})
+      environment: '${{ environmentName }}'
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+            - task: DownloadPipelineArtifact@2
+              displayName: Download AKS Bicep Workspace
+              inputs:
+                buildType: 'current'
+                artifactName: 'AKS-Bicep-out'
+                targetPath: '$(BICEP_WORK_DIR)'
+
+            - task: DownloadPipelineArtifact@2
+              displayName: Download Reviewed What-If Bundle
+              inputs:
+                buildType: 'current'
+                artifactName: '${{ environmentName }}-what-if'
+                targetPath: '$(Pipeline.Workspace)/review-bundle-${{ environmentName }}'
+
+            - task: DownloadSecureFile@1
+              displayName: Download SSH Public Key
+              name: sshkey
+              inputs:
+                secureFile: 'aks-terraform-devops-ssh-key-ubuntu.pub'
+
+            - task: AzureCLI@2
+              displayName: Deploy Bicep Template
+              inputs:
+                azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+                scriptType: 'pscore'
+                scriptLocation: 'inlineScript'
+                inlineScript: |
+                  $ErrorActionPreference = 'Stop'
+
+                  az bicep upgrade
+                  az bicep restore --file "$(BICEP_MANIFESTS_WORK_DIR)/bootstrap-admin-group.bicep"
+                  az bicep restore --file "$(BICEP_MANIFESTS_WORK_DIR)/main.bicep"
+
+                  $sharedParameterFilePath = "$(BICEP_MANIFESTS_WORK_DIR)/shared.parameters.json"
+                  $environmentParameterFilePath = "$(BICEP_MANIFESTS_WORK_DIR)/environments/${{ environmentName }}.parameters.json"
+                  $sharedParameterFile = "@$sharedParameterFilePath"
+                  $environmentParameterFile = "@$environmentParameterFilePath"
+                  $effectiveConfig = (& "$(BICEP_SCRIPTS_WORK_DIR)/Get-AksBicepDeploymentConfig.ps1" `
+                    -BootstrapTemplateFile "$(BICEP_MANIFESTS_WORK_DIR)/bootstrap-admin-group.bicep" `
+                    -MainTemplateFile "$(BICEP_MANIFESTS_WORK_DIR)/main.bicep" `
+                    -ParameterFiles @($sharedParameterFilePath, $environmentParameterFilePath)) | ConvertFrom-Json
+
+                  $sshPublicKeyData = (Get-Content -Raw -LiteralPath "$(sshkey.secureFilePath)").Trim()
+                  $deploymentName = "aks-bicep-${{ environmentName }}-create-$(Build.BuildId)"
+                  $outputDir = "$(Pipeline.Workspace)/deployment-output-${{ environmentName }}"
+                  New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
+
+                  $bootstrapOutputsPath = Join-Path $outputDir 'bootstrap-outputs.json'
+                  az deployment sub create `
+                    --name "$deploymentName-bootstrap" `
+                    --location "$($effectiveConfig.location)" `
+                    --template-file "$(BICEP_MANIFESTS_WORK_DIR)/bootstrap-admin-group.bicep" `
+                    --parameters $sharedParameterFile $environmentParameterFile `
+                    --query properties.outputs `
+                    --output json > $bootstrapOutputsPath
+
+                  $bootstrapOutputs = Get-Content -Raw -LiteralPath $bootstrapOutputsPath | ConvertFrom-Json
+                  $aksAdminGroupObjectId = $bootstrapOutputs.aksAdminGroupObjectId.value
+                  $aksAdminGroupDisplayName = $bootstrapOutputs.aksAdminGroupDisplayName.value
+                  $aksAdminGroupUniqueName = $bootstrapOutputs.aksAdminGroupUniqueName.value
+
+                  az deployment sub create `
+                    --name "$deploymentName-platform" `
+                    --location "$($effectiveConfig.location)" `
+                    --template-file "$(BICEP_MANIFESTS_WORK_DIR)/main.bicep" `
+                    --parameters $sharedParameterFile $environmentParameterFile `
+                    --parameters aksAdminGroupObjectId="$aksAdminGroupObjectId" `
+                                 aksAdminGroupDisplayName="$aksAdminGroupDisplayName" `
+                                 aksAdminGroupUniqueName="$aksAdminGroupUniqueName" `
+                                 sshPublicKeyData="$sshPublicKeyData" `
+                    --output json > (Join-Path $outputDir 'platform-deployment-result.json')
+
+                  az deployment sub show `
+                    --name "$deploymentName-platform" `
+                    --query properties.outputs `
+                    --output json > (Join-Path $outputDir 'deployment-outputs.json')
+
+            - task: PublishPipelineArtifact@1
+              displayName: Publish Deployment Outputs
+              inputs:
+                targetPath: '$(Pipeline.Workspace)/deployment-output-${{ environmentName }}'
+                artifact: '${{ environmentName }}-deployment-output'
+                publishLocation: 'pipeline'
