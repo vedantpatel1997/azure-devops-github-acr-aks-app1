@@ -132,6 +132,16 @@ stages:
               '{"status":"not-found"}' | Set-Content -LiteralPath (Join-Path $reviewDir 'graph-group.json') -Encoding utf8
               $graphGroupState = 'not-found'
             }
+            elseif ($graphLookup -match 'Authorization_RequestDenied' -or $graphLookup -match 'Insufficient privileges' -or $graphLookup -match 'Forbidden') {
+              @"
+              {
+                "status": "permission-denied",
+                "uniqueName": "$($resolved.clusterAdminGroupUniqueName)",
+                "note": "The pipeline identity could not read the Entra group in Microsoft Graph. Destroy can still remove Azure resources, but Entra group cleanup may require a directory role or manual deletion."
+              }
+              "@ | Set-Content -LiteralPath (Join-Path $reviewDir 'graph-group.json') -Encoding utf8
+              $graphGroupState = 'permission-denied'
+            }
             else {
               throw "Microsoft Graph lookup failed for $($resolved.clusterAdminGroupUniqueName). $graphLookup"
             }
@@ -151,6 +161,7 @@ stages:
             Destroy in Bicep is not state-driven like Terraform destroy.
             This review bundle shows the current Azure resources in the resource group
             plus the Microsoft Entra group that will be deleted separately.
+            If Microsoft Graph access is permission-denied, the destroy stage will still remove Azure resources and then emit a warning for manual Entra group cleanup.
             "@ | Set-Content -LiteralPath (Join-Path $reviewDir '${{ environmentName }}-destroy-review.txt') -Encoding utf8
 
       - task: PublishPipelineArtifact@1
@@ -189,23 +200,70 @@ stages:
 
                   $reviewDir = "$(Pipeline.Workspace)/destroy-review-bundle-${{ environmentName }}"
                   $resolved = Get-Content -Raw -LiteralPath (Join-Path $reviewDir 'resolved-values.json') | ConvertFrom-Json
-                  $graphGroup = Get-Content -Raw -LiteralPath (Join-Path $reviewDir 'graph-group.json')
+                  $graphGroupJson = Get-Content -Raw -LiteralPath (Join-Path $reviewDir 'graph-group.json')
+                  $graphGroup = $graphGroupJson | ConvertFrom-Json
                   $resourceGroupExists = (Get-Content -Raw -LiteralPath (Join-Path $reviewDir 'resource-group-exists.txt')).Trim()
+                  $destroySummaryPath = Join-Path $reviewDir '${{ environmentName }}-destroy-result.txt'
+                  $destroyStatusPath = Join-Path $reviewDir 'destroy-status.json'
 
                   if ($resourceGroupExists -eq 'true') {
                     az group delete --name $resolved.resourceGroupName --yes
                     az group wait --deleted --name $resolved.resourceGroupName --timeout 3600
+                    $resourceGroupDeleteState = 'deleted'
                   }
                   else {
                     Write-Host "Resource group $($resolved.resourceGroupName) does not exist. Skipping Azure resource deletion."
+                    $resourceGroupDeleteState = 'not-found'
                   }
 
-                  if ($graphGroup -notmatch '"status":"not-found"') {
+                  if ($graphGroup.status -ne 'not-found') {
                     $deleteResult = & az rest --method DELETE --url $resolved.graphGroupDeleteUrl 2>&1
-                    if ($LASTEXITCODE -ne 0 -and $deleteResult -notmatch 'ResourceNotFound' -and $deleteResult -notmatch 'Request_ResourceNotFound') {
+                    if ($LASTEXITCODE -eq 0) {
+                      $entraGroupDeleteState = 'deleted'
+                    }
+                    elseif ($deleteResult -match 'ResourceNotFound' -or $deleteResult -match 'Request_ResourceNotFound') {
+                      $entraGroupDeleteState = 'not-found'
+                    }
+                    elseif ($deleteResult -match 'Authorization_RequestDenied' -or $deleteResult -match 'Insufficient privileges' -or $deleteResult -match 'Forbidden') {
+                      $entraGroupDeleteState = 'permission-denied'
+                      @"
+                      Microsoft Entra group cleanup was not completed by the pipeline.
+                      Group unique name: $($resolved.clusterAdminGroupUniqueName)
+                      Reason: Microsoft Graph returned an authorization error for the service connection.
+                      Suggested next step: delete the group manually, or grant the pipeline identity permission to delete Entra groups.
+                      Raw Graph response:
+                      $deleteResult
+                      "@ | Set-Content -LiteralPath (Join-Path $reviewDir 'entra-group-manual-cleanup.txt') -Encoding utf8
+                      Write-Host "##vso[task.logissue type=warning]Microsoft Graph delete was not permitted for $($resolved.clusterAdminGroupUniqueName). Azure resources were deleted, but the Entra group may still require manual cleanup."
+                    }
+                    else {
                       throw "Microsoft Graph delete failed for $($resolved.clusterAdminGroupUniqueName). $deleteResult"
                     }
                   }
                   else {
                     Write-Host "Microsoft Entra group $($resolved.clusterAdminGroupUniqueName) was not found. Skipping Microsoft Graph deletion."
+                    $entraGroupDeleteState = 'not-found'
                   }
+
+                  @"
+                  Environment: ${{ environmentName }}
+                  Resource group: $($resolved.resourceGroupName)
+                  Resource group delete state: $resourceGroupDeleteState
+                  Microsoft Entra group unique name: $($resolved.clusterAdminGroupUniqueName)
+                  Microsoft Entra group delete state: $entraGroupDeleteState
+                  "@ | Set-Content -LiteralPath $destroySummaryPath -Encoding utf8
+
+                  [ordered]@{
+                    environment = '${{ environmentName }}'
+                    resourceGroupName = $resolved.resourceGroupName
+                    resourceGroupDeleteState = $resourceGroupDeleteState
+                    entraGroupUniqueName = $resolved.clusterAdminGroupUniqueName
+                    entraGroupDeleteState = $entraGroupDeleteState
+                  } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $destroyStatusPath -Encoding utf8
+
+            - task: PublishPipelineArtifact@1
+              displayName: Publish Destroy Results
+              inputs:
+                targetPath: '$(Pipeline.Workspace)/destroy-review-bundle-${{ environmentName }}'
+                artifact: '${{ environmentName }}-destroy-result'
+                publishLocation: 'pipeline'

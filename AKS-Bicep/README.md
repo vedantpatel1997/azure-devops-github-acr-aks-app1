@@ -140,7 +140,8 @@ Flow:
 4. Publish a destroy review bundle.
 5. Wait for approval on `dev`, `qa`, or `prod`.
 6. Delete the Azure resource group.
-7. Delete the Entra group by `uniqueName`.
+7. Attempt to delete the Entra group by `uniqueName`.
+8. If Microsoft Graph delete permission is missing, finish with a warning and publish a result bundle for manual cleanup.
 
 ## Names this project expects
 
@@ -254,6 +255,26 @@ Then review:
 - `graph-group.json`
 - `<environment>-destroy-review.txt`
 
+Important:
+
+- `graph-group.json` may show `permission-denied` if the pipeline identity cannot read the Entra group in Microsoft Graph
+- the destroy stage still deletes the Azure resource group in that case
+- if Graph delete is forbidden, the pipeline now warns instead of failing and publishes a destroy result artifact
+
+### After destroy runs
+
+Open the destroy result artifact for the environment:
+
+- `dev-destroy-result`
+- `qa-destroy-result`
+- `prod-destroy-result`
+
+Then review:
+
+- `destroy-status.json`
+- `<environment>-destroy-result.txt`
+- `entra-group-manual-cleanup.txt` when Graph deletion was not permitted
+
 ## Local testing commands
 
 You can test locally before using Azure DevOps.
@@ -354,6 +375,8 @@ az group delete --name rg-bicep-aks-dev-westus2 --yes
 az rest --method delete --url "https://graph.microsoft.com/v1.0/groups(uniqueName='grp-aksadmin-aks-bicep-dev-westus2')"
 ```
 
+If Microsoft Graph returns `Authorization_RequestDenied`, the Azure resources may already be deleted successfully and only the Entra group will remain for manual cleanup.
+
 ## Common beginner questions
 
 ### Why is the Bicep create pipeline using what-if instead of plan?
@@ -363,6 +386,12 @@ Because `what-if` is the closest ARM/Bicep concept to a Terraform plan.
 ### Why is the Bicep destroy pipeline not using a single Bicep destroy command?
 
 Because ARM/Bicep does not manage destruction in the same state-driven way Terraform does.
+
+### Why can destroy succeed for Azure resources but still warn about the Entra group?
+
+Because Azure resource deletion and Microsoft Graph group deletion are separate permission boundaries.
+
+The pipeline now treats Microsoft Graph authorization failures during destroy as a manual-cleanup warning instead of failing after the Azure resource group is already gone.
 
 ### Why does the Bicep project still use the Terraform secure file name?
 
