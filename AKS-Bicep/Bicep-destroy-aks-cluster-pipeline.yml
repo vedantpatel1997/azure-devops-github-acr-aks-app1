@@ -83,6 +83,10 @@ stages:
           inlineScript: |
             $ErrorActionPreference = 'Stop'
 
+            az bicep upgrade
+            az bicep restore --file "$(BICEP_MANIFESTS_WORK_DIR)/bootstrap-admin-group.bicep"
+            az bicep restore --file "$(BICEP_MANIFESTS_WORK_DIR)/main.bicep"
+
             $reviewDir = "$(Pipeline.Workspace)/destroy-review-bundle-${{ environmentName }}"
             New-Item -ItemType Directory -Force -Path $reviewDir | Out-Null
             $sharedParameterFilePath = "$(BICEP_MANIFESTS_WORK_DIR)/shared.parameters.json"
